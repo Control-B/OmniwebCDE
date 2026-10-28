@@ -2,6 +2,7 @@ import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import {
   ArrowRight,
   ArrowUp,
+  AppWindow,
   Blocks,
   Code2,
   Cloud,
@@ -16,6 +17,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import { platform } from '../lib/api'
 import { createProject, deleteProject, loadProjects, type Project } from '../lib/projects'
 import { TEMPLATE_PROMPTS, createSpec, kindLabel, renderSite } from '../lib/site-generator'
 
@@ -30,6 +32,13 @@ const SUGGESTIONS = [
   { label: 'Portfolio', prompt: 'A minimal portfolio for a product designer named "Mira Chen"' },
   { label: 'Online store', prompt: 'A calm online store for handmade ceramics called "Kiln & Co"' },
   { label: 'Fitness studio', prompt: 'A bold dark gym website called "Forge Athletics" with class pricing' },
+]
+
+const APP_SUGGESTIONS = [
+  { label: 'Client portal', prompt: 'A client portal for an accounting firm where clients upload documents, track requests, and message their accountant' },
+  { label: 'Booking app', prompt: 'A booking app for a hair salon with stylists, services, appointments, and reminders' },
+  { label: 'Inventory tracker', prompt: 'An inventory tracker for a small warehouse with products, stock levels, suppliers, and purchase orders' },
+  { label: 'Habit tracker (mobile)', prompt: 'A mobile habit tracker with daily check-ins, streaks, and reminders' },
 ]
 
 const TYPED = [
@@ -98,6 +107,8 @@ function Landing() {
   const [prompt, setPrompt] = useState('')
   const [projects, setProjects] = useState<Project[]>([])
   const [submitting, setSubmitting] = useState(false)
+  const [mode, setMode] = useState<'site' | 'app'>('site')
+  const [error, setError] = useState('')
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const typed = useTypewriter(TYPED)
 
@@ -112,6 +123,17 @@ function Landing() {
     const text = value.trim()
     if (!text || submitting) return
     setSubmitting(true)
+    setError('')
+    if (mode === 'app') {
+      platform
+        .createProject(text)
+        .then((project) => navigate({ to: '/projects/$projectId', params: { projectId: project.id }, search: { start: true } }))
+        .catch((reason: Error) => {
+          setError(reason.message)
+          setSubmitting(false)
+        })
+      return
+    }
     const project = createProject(text)
     void navigate({ to: '/build/$projectId', params: { projectId: project.id } })
   }
@@ -133,10 +155,12 @@ function Landing() {
             <a href="#templates">Templates</a>
             <a href="#how">How it works</a>
             <a href="#features">Features</a>
+            <Link to="/usage" hash="pricing">Pricing</Link>
             <Link to="/app">Cloud workspaces</Link>
           </nav>
           <div className="lv-nav-actions">
-            <Link to="/app" className="lv-btn lv-btn-ghost">Dashboard</Link>
+            <Link to="/signin" className="lv-btn lv-btn-ghost">Sign in</Link>
+            <Link to="/projects" className="lv-btn lv-btn-ghost">Projects</Link>
             <button type="button" className="lv-btn lv-btn-light" onClick={() => inputRef.current?.focus()}>
               Start building
             </button>
@@ -174,25 +198,29 @@ function Landing() {
                   start(prompt)
                 }
               }}
-              placeholder={`Ask Omniweb to create ${typed}`}
+              placeholder={mode === 'site' ? `Ask Omniweb to create ${typed}` : 'Describe the application: who uses it, what they do, and the data it keeps…'}
               rows={3}
-              aria-label="Describe the website you want to build"
+              aria-label={mode === 'site' ? 'Describe the website you want to build' : 'Describe the application you want to build'}
             />
             <div className="lv-prompt-bar">
               <div className="lv-prompt-tools">
                 <button type="button" className="lv-icon-btn" title="Attachments are coming soon" disabled>
                   <Paperclip size={16} />
                 </button>
-                <span className="lv-model"><Sparkles size={13} /> Omniweb Designer</span>
+                <div className="bd-switch lv-mode" role="tablist" aria-label="What to build">
+                  <button type="button" role="tab" aria-selected={mode === 'site'} onClick={() => setMode('site')}><Sparkles size={13} /> Website</button>
+                  <button type="button" role="tab" aria-selected={mode === 'app'} onClick={() => setMode('app')}><AppWindow size={13} /> Full-stack app</button>
+                </div>
               </div>
-              <button type="submit" className="lv-send" disabled={!prompt.trim() || submitting} aria-label="Generate website">
+              <button type="submit" className="lv-send" disabled={!prompt.trim() || submitting} aria-label={mode === 'site' ? 'Generate website' : 'Create application'}>
                 <ArrowUp size={18} strokeWidth={2.5} />
               </button>
             </div>
+            {error && <p className="lv-prompt-error" role="alert">{error}</p>}
           </form>
 
           <div className="lv-chips">
-            {SUGGESTIONS.map((item) => (
+            {(mode === 'site' ? SUGGESTIONS : APP_SUGGESTIONS).map((item) => (
               <button key={item.label} type="button" onClick={() => start(item.prompt)}>
                 {item.label}
                 <ArrowUp size={12} className="lv-chip-arrow" />

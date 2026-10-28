@@ -63,7 +63,7 @@ def _dev_completion(messages: list[dict]) -> Completion:
     content = (
         "Development model: no AI provider is configured, so this reply is generated locally "
         f"without a language model. I received your message ({words} words, ref {digest}). "
-        "Add a provider key in Settings → Models to get real responses."
+        "An organization admin can add a provider key under Usage → Providers to get real responses."
     )
     return Completion(content, estimate_tokens(messages), int(len(content) / 3.5), 0)
 

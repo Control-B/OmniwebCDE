@@ -232,6 +232,7 @@
 .st-auth-card .st-muted { line-height: 1.6; }
 
 /* Settings */
+.st-settings > h1 { font-size: 28px; font-weight: 600; margin-bottom: 24px; }
 .st-settings-grid { display: grid; grid-template-columns: 200px 1fr; gap: 32px; align-items: start; }
 .st-settings-nav { position: sticky; top: 84px; display: grid; gap: 2px; }
 .st-settings-nav a { padding: 8px 12px; border-radius: 8px; font-size: 14px; color: var(--ink-2); }

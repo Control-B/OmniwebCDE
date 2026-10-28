@@ -72,6 +72,8 @@
 .lv-prompt-tools { display: flex; align-items: center; gap: 8px; }
 .lv-icon-btn { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; border: 1px solid var(--hair-2); background: transparent; color: var(--ink-2); }
 .lv-icon-btn:disabled { opacity: 0.5; }
+.lv-mode button { height: 28px; font-size: 12.5px; }
+.lv-prompt-error { margin: 8px 0 0; font-size: 13px; color: #fca5a5; }
 .lv-model { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); padding: 0 10px; height: 34px; border-radius: 10px; background: rgba(255, 255, 255, 0.04); }
 .lv-send { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%; border: 0; background: var(--ink); color: #111 !important; transition: transform 0.15s, opacity 0.2s; flex: none; }
 .lv-send:hover:not(:disabled) { transform: scale(1.06); }
