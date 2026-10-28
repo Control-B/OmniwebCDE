@@ -83,6 +83,8 @@ services:
       OMNIWEB_MOCK_INFRASTRUCTURE: "true"
       OMNIWEB_MODEL_GATEWAY_URL: http://model-gateway:8020
       OMNIWEB_MODEL_GATEWAY_SECRET: ${MODEL_GATEWAY_SECRET:-local-development-gateway-secret-change-me}
+      OMNIWEB_AAEE_URL: http://ai-execution-engine:8030
+      OMNIWEB_AAEE_SECRET: ${AAEE_SERVICE_SECRET:-local-development-aaee-secret-change-me}
       # Leave OMNIWEB_OIDC_ISSUER empty to use the local development identity. To sign in through
       # Keycloak, set it to http://localhost:8180/realms/omniweb (the issuer browsers see).
       OMNIWEB_OIDC_ISSUER: ${OMNIWEB_OIDC_ISSUER:-}
@@ -100,6 +102,8 @@ services:
       redis:
         condition: service_healthy
       model-gateway:
+        condition: service_started
+      ai-execution-engine:
         condition: service_started
 
   preview:
@@ -134,6 +138,26 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
+  ai-execution-engine:
+    build:
+      context: ./services/ai-execution-engine
+    ports:
+      - "8030:8030"
+    environment:
+      AAEE_ENVIRONMENT: development
+      AAEE_DATABASE_URL: postgresql+asyncpg://omniweb:${POSTGRES_PASSWORD:-local-development-only}@postgres:5432/aaee
+      AAEE_REDIS_URL: redis://redis:6379/1
+      AAEE_SERVICE_SECRET: ${AAEE_SERVICE_SECRET:-local-development-aaee-secret-change-me}
+      AAEE_GATEWAY_URL: http://model-gateway:8020
+      AAEE_GATEWAY_SECRET: ${MODEL_GATEWAY_SECRET:-local-development-gateway-secret-change-me}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      model-gateway:
+        condition: service_started
 
   web:
     build:

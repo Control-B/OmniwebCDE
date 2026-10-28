@@ -6,6 +6,29 @@ lets you change it by chat, by hand, or by clicking the preview, syncs it to Git
 deploys it to DigitalOcean after you approve the cost. See the
 [architecture plan](docs/platform-plan.md) for service boundaries and milestone status.
 
+## Unified business and marketing intelligence
+
+- `/create` is the primary prompt surface for combined software, business planning,
+  marketing, text, image, and video requests. AUTO detects multiple intents and creates a
+  dependency-aware LangGraph execution; explicit BUILD, BUSINESS, MARKETING, CONTENT,
+  IMAGE, and VIDEO modes remain available.
+- `/projects/<id>/growth` keeps plans, campaigns, funnels, blog/content work, CRM leads,
+  analytics, automations, and capability improvements in the same project context as the
+  application builder.
+- Business plans distinguish sourced claims from assumptions and projections. Marketing
+  analytics report only recorded events. Publication, paid actions, media generation, and
+  software releases are explicit approval gates.
+- The capability-evolution service links authorized evidence to hypotheses, catalog
+  matches, implementation runs, tests, releases, marketing proposals, and measured
+  outcomes in both directions. Correlation is never labelled causation.
+
+The detailed inventory, patent-source gap, traceability matrix, contracts, relational
+migration plan, security boundaries, cost policy, and architecture decisions are in
+[`docs/unified-intelligence-architecture.md`](docs/unified-intelligence-architecture.md).
+No patent draft or technical drawings were present in this repository, so the
+traceability report maps only the mechanisms supplied as product requirements and makes
+no patent-coverage claim.
+
 ## Application builder
 
 - `/` — landing page. The prompt has two modes: **Website** (the local website builder
@@ -175,11 +198,47 @@ The control plane expects it at `http://127.0.0.1:8020` (`OMNIWEB_MODEL_GATEWAY_
 Both services share the development secret by default; set `OMNIWEB_MODEL_GATEWAY_SECRET`
 and `GATEWAY_SERVICE_SECRET` to the same value outside development.
 
+### Adaptive AI Execution Engine
+
+```bash
+cd services/ai-execution-engine
+python3 -m pip install -e '.[dev]'
+python3 -m uvicorn aaee.main:app --reload --port 8030
+```
+
+The backend calls AAEE at `OMNIWEB_AAEE_URL` and signs requests with
+`OMNIWEB_AAEE_SECRET`; AAEE uses `AAEE_SERVICE_SECRET` to verify them. AAEE is the single
+cost-aware router for builder, business, marketing, and content tasks. It uses
+deterministic tools first, then configured GPT-OSS/Grok/OpenAI routes by task phase and
+bounded escalation. Codex is intentionally not a provider. Model estimates and configured
+budget ceilings are controls, not guarantees of provider billing.
+
+### Media providers
+
+Media adapters are disabled until an administrator configures credentials, verifies model
+access and pricing, and authorizes a job. No paid generation is performed by setup or
+tests.
+
+| Variable | Purpose |
+| --- | --- |
+| `OMNIWEB_OPENAI_MEDIA_API_KEY` | Server-only OpenAI media credential |
+| `OMNIWEB_OPENAI_IMAGE_MODELS` | Admin-allowed image models |
+| `OMNIWEB_OPENAI_VIDEO_MODELS` | Admin-allowed video models; empty means unavailable |
+| `OMNIWEB_MEDIA_PRICING_JSON` | Operator-validated estimates used before authorization |
+| `OMNIWEB_ASSET_DATA_DIR` | Object-store adapter data directory |
+
+At implementation time the official OpenAI schema exposed GPT Image 1/1.5-family image
+models and a Sora 2 video endpoint. The requested names `gpt-image-2.5-flare` and
+`gpt-image-2.5-sunburst` could not be verified and are not registered. Video capability
+remains unavailable unless a configured account is explicitly validated; unsupported
+features fail with a capability status rather than a false promise.
+
 ### Tests
 
 ```bash
 (cd backend && pytest && ruff check .)
 (cd services/model-gateway && pytest && ruff check .)
+(cd services/ai-execution-engine && pytest && ruff check .)
 (cd frontend && npm run typecheck && npm run build)
 # Browser tests run against the dev servers above:
 (cd frontend && npx playwright install chromium && npm run test:e2e)
