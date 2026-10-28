@@ -10,6 +10,8 @@ from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_
 from sqlalchemy import select
 
 from .api import router
+from .builder import pipeline, preview
+from .builder_api import router as builder_router
 from .config import get_settings
 from .database import SessionLocal, engine
 from .models import Base, Membership, Organization, User, Workspace, WorkspaceState
@@ -58,7 +60,9 @@ async def lifespan(_: FastAPI):
                     )
                 )
                 await db.commit()
+    await pipeline.resume_all(settings)
     yield
+    await preview.stop_all()
     await engine.dispose()
 
 
@@ -77,6 +81,7 @@ app.add_middleware(
 )
 app.include_router(router)
 app.include_router(projects_router)
+app.include_router(builder_router)
 
 
 @app.middleware("http")

@@ -154,8 +154,100 @@ class Project(Base):
     deployment_status: Mapped[str] = mapped_column(String(24), default="not_deployed")
     github_repo: Mapped[str | None] = mapped_column(String(200))
     app_config: Mapped[dict] = mapped_column(JSON, default=dict)
+    spec: Mapped[dict | None] = mapped_column(JSON)
+    migrations: Mapped[list] = mapped_column(JSON, default=list)
+    head_sha: Mapped[str | None] = mapped_column(String(40))
+    preview_token: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
+    last_build: Mapped[dict | None] = mapped_column(JSON)
+    github_installation_id: Mapped[str | None] = mapped_column(String(40))
+    github_default_branch: Mapped[str] = mapped_column(String(100), default="main")
+    last_pushed_sha: Mapped[str | None] = mapped_column(String(40))
+    last_pulled_sha: Mapped[str | None] = mapped_column(String(40))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class GenerationRun(Base):
+    """One pass of the builder graph. `state` is saved after every node so runs resume after restarts."""
+
+    __tablename__ = "generation_runs"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    requested_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    kind: Mapped[str] = mapped_column(String(24))
+    instruction: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(24), default="queued", index=True)
+    stage: Mapped[str] = mapped_column(String(32), default="queued")
+    state: Mapped[dict] = mapped_column(JSON, default=dict)
+    steps: Mapped[list] = mapped_column(JSON, default=list)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0)
+    error: Mapped[str | None] = mapped_column(Text)
+    checkpoint_sha: Mapped[str | None] = mapped_column(String(40))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class Checkpoint(Base):
+    __tablename__ = "checkpoints"
+    __table_args__ = (UniqueConstraint("project_id", "sha"),)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    sha: Mapped[str] = mapped_column(String(40))
+    parent_sha: Mapped[str | None] = mapped_column(String(40))
+    message: Mapped[str] = mapped_column(String(300))
+    author: Mapped[str] = mapped_column(String(16))
+    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("generation_runs.id", ondelete="SET NULL"))
+    restores_sha: Mapped[str | None] = mapped_column(String(40))
+    action: Mapped[str] = mapped_column(String(16), default="change")
+    undo_of: Mapped[str | None] = mapped_column(String(40))
+    verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    spec: Mapped[dict | None] = mapped_column(JSON)
+    migrations: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+
+
+class Approval(Base):
+    """A decision a person must make before an agent may continue (destructive migrations, deploys)."""
+
+    __tablename__ = "approvals"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    summary: Mapped[str] = mapped_column(String(300))
+    details: Mapped[dict] = mapped_column(JSON, default=dict)
+    estimated_monthly_usd: Mapped[float | None] = mapped_column(Float)
+    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("generation_runs.id", ondelete="SET NULL"))
+    requested_by: Mapped[str] = mapped_column(String(64))
+    decided_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class Deployment(Base):
+    __tablename__ = "deployments"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    environment: Mapped[str] = mapped_column(String(16))
+    cloud_connection_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("cloud_connections.id"))
+    commit_sha: Mapped[str] = mapped_column(String(40))
+    region: Mapped[str] = mapped_column(String(16), default="nyc")
+    status: Mapped[str] = mapped_column(String(24), default="awaiting_approval")
+    approval_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("approvals.id"))
+    external_app_id: Mapped[str | None] = mapped_column(String(100))
+    external_deployment_id: Mapped[str | None] = mapped_column(String(100))
+    url: Mapped[str | None] = mapped_column(String(300))
+    estimated_monthly_usd: Mapped[float] = mapped_column(Float, default=0)
+    rollback_of: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("deployments.id"))
+    app_spec: Mapped[dict] = mapped_column(JSON, default=dict)
+    log: Mapped[list] = mapped_column(JSON, default=list)
+    requested_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ProjectMember(Base):

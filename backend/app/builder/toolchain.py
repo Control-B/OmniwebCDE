@@ -36,7 +36,8 @@ def data_dir(settings: Settings) -> Path:
 
 
 def toolchain_dir(settings: Settings) -> Path:
-    return data_dir(settings) / "toolchain" / version()
+    base = Path(settings.builder_toolchain_dir).resolve() if settings.builder_toolchain_dir else data_dir(settings) / "toolchain"
+    return base / version()
 
 
 def node_binary() -> str:
@@ -47,7 +48,7 @@ def node_binary() -> str:
 
 
 async def _run(*args: str, cwd: Path) -> None:
-    env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": os.environ.get("HOME", "/tmp"), "npm_config_update_notifier": "false"}
+    env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": os.environ.get("HOME", "/tmp"), "npm_config_update_notifier": "false"}  # noqa: S108
     process = await asyncio.create_subprocess_exec(*args, cwd=cwd, env=env, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
     output, _ = await process.communicate()
     if process.returncode != 0:

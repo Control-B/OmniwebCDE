@@ -5,8 +5,8 @@ only thing that turns it into files, so every generated app has a known, testabl
 """
 
 import hashlib
-import keyword
 import json
+import keyword
 import re
 from typing import Literal
 

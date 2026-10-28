@@ -25,11 +25,14 @@ class Settings(BaseSettings):
 
     # Application builder. Generated code runs only inside the sandbox selected here.
     builder_data_dir: str = "./.omniweb"
+    builder_toolchain_dir: str = ""
     sandbox_mode: Literal["namespace", "container", "disabled"] = "namespace"
     sandbox_image: str = "ghcr.io/omniweb/generated-app-runner:2026.10"
     sandbox_timeout_seconds: int = 300
-    preview_url: str = "http://127.0.0.1:43230"
-    preview_secret: str = Field(default="", repr=False)
+    preview_url: str = "http://localhost:43230"
+    # Each project's preview gets its own origin (<token>.preview.<host>) so generated apps cannot
+    # read each other's storage. Browsers resolve *.localhost to loopback, so this works locally.
+    preview_subdomains: bool = True
     max_repair_attempts: int = 2
 
     # GitHub App used for repository sync. Without an app ID, a local mock remote is used.

@@ -1230,7 +1230,7 @@ def _api_router(entity: EntitySpec, auth: bool) -> str:
         + "    row = _get(db, row_id)\n"
         + "    for key, value in data.model_dump().items():\n        setattr(row, key, value)\n"
         + "    db.commit()\n    db.refresh(row)\n    return row\n\n\n"
-        + f'@router.delete("/{{row_id}}", status_code=status.HTTP_204_NO_CONTENT)\n'
+        + '@router.delete("/{row_id}", status_code=status.HTTP_204_NO_CONTENT)\n'
         + f"def delete_{singular}(row_id: str, db: Session = Depends(get_db)) -> Response:\n"
         + "    db.delete(_get(db, row_id))\n    db.commit()\n    return Response(status_code=204)\n"
     )

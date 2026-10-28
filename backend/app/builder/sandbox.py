@@ -22,7 +22,7 @@ from pathlib import Path
 from ..config import Settings
 from .toolchain import data_dir
 
-HIDDEN = ["/home", "/root", "/run", "/var/run", "/tmp", "/var/tmp", "/workspace", "/cursor", "/opt", "/exec-daemon", "/srv", "/var/lib", "/var/log", "/media"]
+HIDDEN = ["/home", "/root", "/run", "/var/run", "/tmp", "/var/tmp", "/workspace", "/cursor", "/opt", "/exec-daemon", "/srv", "/var/lib", "/var/log", "/media"]  # noqa: S108  guest paths inside the sandbox
 SECRET_PATTERN = re.compile(
     r"(sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|dop_v1_[a-f0-9]{20,}"
     r"|Bearer\s+[A-Za-z0-9._-]{16,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)"
@@ -92,7 +92,7 @@ def link_node_modules(app_dir: Path, toolchain: Path) -> None:
 def guest_env(job: Job) -> dict[str, str]:
     return {
         "PATH": GUEST_PATH,
-        "HOME": "/tmp",
+        "HOME": "/tmp",  # noqa: S108  guest paths inside the sandbox
         "LANG": "C.UTF-8",
         "PYTHONPATH": "/mnt/toolchain/python",
         "PYTHONNOUSERSITE": "1",
@@ -121,7 +121,7 @@ def _namespace_argv(settings: Settings, job: Job, toolchain: Path) -> tuple[list
 def _container_argv(settings: Settings, job: Job, toolchain: Path) -> tuple[list[str], dict[str, str]]:
     argv = [
         "docker", "run", "--rm", "--network", "none", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
-        "--pids-limit", "512", "--memory", "2g", "--cpus", "2", "--user", "10001:10001", "--tmpfs", "/tmp:size=1g",
+        "--pids-limit", "512", "--memory", "2g", "--cpus", "2", "--user", "10001:10001", "--tmpfs", "/tmp:size=1g",  # noqa: S108  guest paths inside the sandbox
         "-v", f"{job.app_dir}:/mnt/app", "-v", f"{toolchain}:/mnt/toolchain:ro", "-w", "/mnt/app",
     ]
     if job.run_dir:

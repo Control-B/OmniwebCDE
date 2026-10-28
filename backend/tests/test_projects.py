@@ -1,12 +1,7 @@
 import asyncio
-import os
-import sys
-import tempfile
 import uuid
 from pathlib import Path
 
-import httpx
-import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -18,13 +13,6 @@ from app.security import DEV_ORG_ID, get_principal
 from app.services import gateway as gateway_client
 
 GATEWAY_DIR = Path(__file__).resolve().parents[2] / "services" / "model-gateway"
-
-
-@pytest.fixture
-def client():
-    with TestClient(app) as test_client:
-        yield test_client
-    app.dependency_overrides.clear()
 
 
 def as_user(role: str = "member", org: uuid.UUID = DEV_ORG_ID) -> Principal:
@@ -112,40 +100,6 @@ def test_gateway_tokens_are_scoped_and_short_lived():
     assert claims["org"] == str(principal.organization_id)
     assert claims["project"] == str(project_id)
     assert claims["exp"] - claims["iat"] <= 180
-
-
-@pytest.fixture
-def live_gateway(monkeypatch):
-    """Run the real model gateway in-process so the service-token handshake is exercised."""
-    database = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
-    os.environ["GATEWAY_DATABASE_URL"] = f"sqlite+aiosqlite:///{database.name}"
-    os.environ["GATEWAY_OPENROUTER_PUBLIC_CATALOG"] = "false"
-    sys.path.insert(0, str(GATEWAY_DIR))
-    from gateway.database import SessionLocal as GatewaySession
-    from gateway.database import engine as gateway_engine
-    from gateway.main import app as gateway_app
-    from gateway.models import Base as GatewayBase
-    from gateway.registry import seed_dev_models
-
-    async def prepare():
-        async with gateway_engine.begin() as connection:
-            await connection.run_sync(GatewayBase.metadata.create_all)
-        async with GatewaySession() as db:
-            from gateway.config import get_settings as gateway_settings
-
-            await seed_dev_models(db, gateway_settings())
-        await gateway_engine.dispose()
-
-    asyncio.run(prepare())
-    real_client = httpx.AsyncClient
-
-    def client_factory(*args, **kwargs):
-        kwargs["transport"] = httpx.ASGITransport(app=gateway_app)
-        return real_client(*args, **kwargs)
-
-    monkeypatch.setattr(gateway_client.httpx, "AsyncClient", client_factory)
-    yield
-    sys.path.remove(str(GATEWAY_DIR))
 
 
 def test_chat_goes_through_the_model_gateway_and_records_cost(client, live_gateway):

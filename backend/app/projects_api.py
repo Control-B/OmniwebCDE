@@ -8,12 +8,18 @@ from pydantic import BaseModel, Field, SecretStr
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .builder import pipeline, preview
+from .builder.store import ProjectStore
 from .config import Settings, get_settings
 from .database import get_db
 from .models import (
     AgentExecution,
+    Approval,
     AuditEvent,
+    Checkpoint,
     Conversation,
+    Deployment,
+    GenerationRun,
     Membership,
     Message,
     Project,
@@ -28,17 +34,17 @@ from .services import gateway
 router = APIRouter(prefix="/api/v1")
 
 TEMPLATES = {
-    "react-web": {"label": "Web application", "stack": ["React", "TypeScript", "TanStack Start", "Tailwind CSS", "shadcn/ui"]},
-    "fastapi-backend": {"label": "Backend API", "stack": ["FastAPI", "PostgreSQL", "SQLAlchemy", "Alembic", "OpenAPI"]},
-    "expo-mobile": {"label": "Mobile application", "stack": ["React Native", "Expo", "Expo Router", "TypeScript"]},
-    "full-stack": {"label": "Full-stack application", "stack": ["React", "TanStack Start", "FastAPI", "PostgreSQL", "Shared contracts"]},
+    "react-web": {"label": "Web application", "stack": ["React", "TypeScript", "Vite", "Tailwind CSS", "Vitest"]},
+    "fastapi-backend": {"label": "Backend API", "stack": ["FastAPI", "PostgreSQL", "SQLAlchemy", "Alembic", "OpenAPI", "pytest"]},
+    "expo-mobile": {"label": "Mobile application", "stack": ["React Native", "Expo", "TypeScript"]},
+    "full-stack": {"label": "Full-stack application", "stack": ["React", "Vite", "FastAPI", "PostgreSQL", "Alembic", "Typed API client"]},
 }
 REQUIREMENTS_SYSTEM_PROMPT = (
     "You are Omniweb's requirements assistant. Help the user define the application they want to build. "
     "Restate the goal in one sentence, list the main user roles, list user stories as 'As a <role>, I want ...', "
     "and ask at most three clarifying questions that would change the architecture. Be concise. "
-    "Code generation is not available yet in this version of Omniweb, so never claim to have generated, built, "
-    "tested, or deployed code."
+    "You do not write code yourself: when the user is ready, they press Generate and Omniweb's build pipeline creates, "
+    "tests, and previews the app. Never claim that code was generated, built, tested, or deployed."
 )
 ENV_KEY = re.compile(r"^[A-Z][A-Z0-9_]{0,127}$")
 WRITE_ROLES = {"owner", "editor"}
@@ -151,6 +157,8 @@ async def project_view(db: AsyncSession, project: Project, role: str) -> dict:
         "deployment_status": project.deployment_status,
         "github_repo": project.github_repo,
         "app_config": project.app_config,
+        "has_code": bool(project.head_sha),
+        "head_sha": project.head_sha,
         "estimated_usage_usd": round(float(stats[0]), 6),
         "message_count": int(stats[1]),
         "your_role": role,
@@ -253,19 +261,32 @@ async def update_project(
 
 @router.delete("/projects/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_project(
-    project_id: uuid.UUID, confirm_name: str, db: AsyncSession = Depends(get_db), principal: Principal = Depends(get_principal)
+    project_id: uuid.UUID,
+    confirm_name: str,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_principal),
+    settings: Settings = Depends(get_settings),
 ) -> Response:
     project, role = await project_access(db, project_id, principal, write=True)
     if role != "owner":
         raise HTTPException(status_code=403, detail="Only project owners can delete a project")
     if confirm_name != project.name:
         raise HTTPException(status_code=422, detail="Type the project name to confirm deletion")
-    for model in (Message, AgentExecution, ProjectEnvVar, Conversation, ProjectMember):
+    if await db.scalar(select(Deployment.id).where(Deployment.project_id == project.id, Deployment.status.in_(["live", "deploying"]))):
+        raise HTTPException(status_code=409, detail="This project has live deployments. Remove the App Platform app from your DigitalOcean account first.")
+    for active in await db.scalars(select(GenerationRun.id).where(GenerationRun.project_id == project.id, GenerationRun.status.in_(["queued", "running"]))):
+        await pipeline.cancel(active)
+    for model in (Deployment, Approval, Checkpoint, GenerationRun, Message, AgentExecution, ProjectEnvVar, Conversation, ProjectMember):
         for row in await db.scalars(select(model).where(model.project_id == project.id)):
             await db.delete(row)
+        await db.flush()
+    token = project.preview_token
     await db.delete(project)
     audit(db, principal, "project.delete", "project", str(project_id))
     await db.commit()
+    if token:
+        await preview.remove(settings, token)
+    ProjectStore(settings, project_id).remove()
     return Response(status_code=204)
 
 

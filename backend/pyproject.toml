@@ -8,6 +8,7 @@ dependencies = [
   "cryptography>=46.0.3",
   "fastapi>=0.120.0",
   "httpx>=0.28.1",
+  "langgraph>=1.2.0",
   "opentelemetry-api>=1.38.0",
   "opentelemetry-instrumentation-fastapi>=0.59b0",
   "prometheus-client>=0.23.1",
@@ -43,3 +44,8 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "S"]
 ignore = ["B008", "E501", "S101"]
+
+[tool.ruff.lint.per-file-ignores]
+# Templates emit source code for generated apps; their strings are not executed as SQL here.
+"app/builder/templates.py" = ["S608"]
+"tests/*" = ["S603", "S607"]
