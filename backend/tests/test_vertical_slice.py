@@ -7,6 +7,16 @@ from app.schemas import Principal
 from app.security import get_principal
 
 
+def test_loopback_preview_origin_is_allowed() -> None:
+    with TestClient(app) as client:
+        response = client.get(
+            "/api/v1/dashboard",
+            headers={"Origin": "http://127.0.0.1:43210"},
+        )
+        assert response.status_code == 200
+        assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:43210"
+
+
 def test_workspace_creation_is_idempotent() -> None:
     with TestClient(app) as client:
         suffix = uuid.uuid4().hex[:8]

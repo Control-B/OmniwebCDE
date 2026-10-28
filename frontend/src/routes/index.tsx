@@ -80,6 +80,8 @@ function App() {
           {navItems.map(({ label, icon: Icon }) => (
             <button
               key={label}
+              aria-label={label}
+              title={label}
               className={page === label ? 'active' : ''}
               onClick={() => setPage(label)}
             >
@@ -130,6 +132,20 @@ function App() {
           {page === 'AI agents' && <Agents />}
         </div>
       </main>
+
+      <nav className="mobile-nav" aria-label="Primary navigation">
+        {navItems.map(({ label, icon: Icon }) => (
+          <button
+            key={label}
+            aria-label={label}
+            className={page === label ? 'active' : ''}
+            onClick={() => setPage(label)}
+          >
+            <Icon size={18} />
+            <span>{label === 'Cloud accounts' ? 'Cloud' : label}</span>
+          </button>
+        ))}
+      </nav>
 
       {showCreate && (
         <CreateWorkspace

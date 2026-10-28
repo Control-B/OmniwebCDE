@@ -23,6 +23,16 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.environment == "production"
 
+    @property
+    def allowed_frontend_origins(self) -> list[str]:
+        origins = {self.frontend_origin.rstrip("/")}
+        if not self.is_production:
+            if "localhost" in self.frontend_origin:
+                origins.add(self.frontend_origin.replace("localhost", "127.0.0.1").rstrip("/"))
+            if "127.0.0.1" in self.frontend_origin:
+                origins.add(self.frontend_origin.replace("127.0.0.1", "localhost").rstrip("/"))
+        return sorted(origins)
+
 
 @lru_cache
 def get_settings() -> Settings:

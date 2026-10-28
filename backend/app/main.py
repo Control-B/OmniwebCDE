@@ -69,7 +69,7 @@ app = FastAPI(
 )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.frontend_origin],
+    allow_origins=settings.allowed_frontend_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["Authorization", "Content-Type", "Idempotency-Key"],
@@ -111,7 +111,7 @@ async def metrics() -> Response:
 @app.websocket("/api/v1/terminal/{workspace_id}")
 async def terminal(websocket: WebSocket, workspace_id: uuid.UUID) -> None:
     origin = websocket.headers.get("origin")
-    if origin != settings.frontend_origin:
+    if origin not in settings.allowed_frontend_origins:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Origin rejected")
         return
     token = websocket.query_params.get("access_token", "")
