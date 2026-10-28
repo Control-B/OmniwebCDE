@@ -187,6 +187,8 @@ KNOWN_ENTITIES: dict[str, tuple[str, str, list[FieldSpec]]] = {
 }
 ALIASES = {"lend": "loan", "lends": "loan", "lending": "loan", "borrow": "loan", "borrows": "loan", "borrowing": "loan", "rental": "booking", "reservation": "booking", "reservations": "booking", "staff": "employee", "team": "employee"}
 COMPOUND_TAILS = {"maintenance": {"request"}, "purchase": {"order"}, "rent": {"payment", "collection"}, "support": {"ticket"}}
+PRODUCT_WORDS = {"app", "application", "platform", "system", "site", "website", "portal", "tool", "tracker", "manager", "dashboard", "service"}
+STOP_NOUNS = {"sign", "log", "login", "signup", "auth", "authentication", "access", "support", "mode", "theme", "design", "layout", "feature", "features", "app", "apps", "ui", "admin", "dashboard", "dashboards", "reports", "notifications", "emails", "payments"}
 ROLE_WORDS = ["admin", "landlord", "tenant", "client", "staff", "manager", "customer", "teacher", "student", "member", "accountant", "stylist", "neighbour", "neighbor"]
 
 
@@ -218,28 +220,39 @@ def heuristic_spec(prompt: str, template: str, name: str) -> AppSpec:
     """Deterministic spec from the prompt. Used when no AI provider is configured."""
     text = prompt.lower()
     found: list[EntitySpec] = []
+    descriptors: list[EntitySpec] = []
     words = re.findall(r"[a-z]+", text)
     for index, word in enumerate(words):
         key = ALIASES.get(word, singularize(word))
         previous = singularize(words[index - 1]) if index else ""
+        following = words[index + 1] if index + 1 < len(words) else ""
         if key in COMPOUND_TAILS.get(previous, set()):
             continue
         if key in KNOWN_ENTITIES:
             entity_name, description, fields = KNOWN_ENTITIES[key]
-            if entity_name not in {e.name for e in found}:
-                found.append(EntitySpec(name=entity_name, label=pluralize(re.sub(r"(?<!^)(?=[A-Z])", " ", entity_name)), description=description, fields=fields))
+            entity = EntitySpec(name=entity_name, label=pluralize(re.sub(r"(?<!^)(?=[A-Z])", " ", entity_name)), description=description, fields=fields)
+            # "a booking app" names the product; the entity only counts if nothing else is found.
+            target = descriptors if following in PRODUCT_WORDS else found
+            if entity_name not in {e.name for e in found + descriptors}:
+                target.append(entity)
+    known = bool(found)
+    tail = re.search(r"\b(?:with|manage|track|tracking|for managing|of)\s+([a-z ,]+)", text)
+    if tail:
+        for chunk in re.split(r",|\band\b", tail.group(1)):
+            noun = chunk.strip().split(" ")[-1] if chunk.strip() else ""
+            if len(noun) <= 2 or noun in STOP_NOUNS or ALIASES.get(noun, singularize(noun)) in KNOWN_ENTITIES:
+                continue
+            if known and not noun.endswith("s"):
+                continue
+            entity = _generic_entity(noun)
+            if entity and entity.name not in {e.name for e in found}:
+                found.append(entity)
     if not found:
-        tail = re.search(r"\b(?:with|manage|track|tracking|for managing|of)\s+([a-z ,]+)", text)
-        if tail:
-            for chunk in re.split(r",|\band\b", tail.group(1)):
-                noun = chunk.strip().split(" ")[-1] if chunk.strip() else ""
-                entity = _generic_entity(noun) if len(noun) > 2 else None
-                if entity and entity.name not in {e.name for e in found}:
-                    found.append(entity)
+        found = descriptors
     if not found:
         found.append(EntitySpec(name="Item", label="Items", description="Things you track", fields=[F("name", "Name", required=True), F("status", "Status"), F("notes", "Notes", "text")]))
     targets = _targets(template, prompt)
-    auth = "api" in targets and bool(re.search(r"\b(log ?in|sign ?in|accounts?|users?|auth|portal|roles?|permissions?|members?)\b", text))
+    auth = "api" in targets and bool(re.search(r"\b(log[- ]?in|sign[- ]?(?:in|up)|accounts?|users?|auth|portal|roles?|permissions?|members?)\b", text))
     roles = [r.replace("neighbor", "neighbour") for r in ROLE_WORDS if re.search(rf"\b{r}s?\b", text)]
     tagline = re.sub(r"\s+", " ", prompt.strip())[:157]
     return AppSpec(

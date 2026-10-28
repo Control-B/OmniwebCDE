@@ -63,10 +63,11 @@
 .hp-text small { font-size: 11.5px; color: var(--ink-3); }
 .hp-text .st-ok { font-size: 11.5px; }
 .hp-unverified { color: var(--warn); }
-.hp-diff { display: grid; gap: 10px; padding: 0 10px 12px; }
+.hp-diff { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 0 10px 12px; }
+.hp-diff > .lv-btn { justify-self: start; }
 .hp-files { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; font-size: 12px; }
 .hp-files li { display: flex; align-items: center; gap: 8px; }
-.hp-files code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hp-files code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: none; padding: 0; color: var(--ink-2); }
 .hp-add { color: var(--ok); }
 .hp-del { color: var(--bad); }
 .hp-patch { margin: 0; max-height: 320px; overflow: auto; padding: 10px; border-radius: 10px; background: #070708; border: 1px solid var(--hair); font: 11.5px/1.6 'DM Mono', ui-monospace, monospace; color: var(--ink-2); white-space: pre; }
