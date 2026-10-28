@@ -13,6 +13,7 @@ from .api import router
 from .config import get_settings
 from .database import SessionLocal, engine
 from .models import Base, Membership, Organization, User, Workspace, WorkspaceState
+from .projects_api import router as projects_router
 from .security import DEV_ORG_ID, DEV_USER_ID, signing_secret
 
 settings = get_settings()
@@ -62,19 +63,20 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(
-    title="Omniweb CDE API",
+    title="Omniweb API",
     version="0.1.0",
-    description="Multi-tenant workspace control plane",
+    description="Multi-tenant control plane: identity, projects, and cloud workspaces",
     lifespan=lifespan,
 )
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_frontend_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "DELETE"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type", "Idempotency-Key"],
 )
 app.include_router(router)
+app.include_router(projects_router)
 
 
 @app.middleware("http")
