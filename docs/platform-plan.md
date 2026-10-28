@@ -101,3 +101,26 @@ Milestone 1 makes no model calls on its own. Each builder chat message is one ga
 request. From Milestone 2, a generation run is expected to take tens of model calls
 (requirements, plan, per-file generation, repair); economy-tier models handle
 deterministic-adjacent tasks and advanced models are reserved for architecture and repair.
+
+## 7. Milestone 1 status
+
+Delivered: OIDC fixes (discovery-based JWKS, realm `org_id` and audience mappers, user
+persistence), the projects domain, the model gateway, the landing-page app mode, the
+project dashboard, the three-panel builder, project settings, and the usage page.
+
+Verified locally: 15 backend tests, 15 gateway tests, Ruff, TypeScript, a production
+build, and 5 Playwright browser tests (project creation and chat, panel collapse and full
+screen, write-only environment variables, usage page, and the phone layout). Live
+discovery against OpenRouter's public catalog returned 464 models.
+
+Not verified:
+
+- Real model calls, because no provider keys are available here. The adapters use LiteLLM
+  and are covered with mocks.
+- Keycloak and the Compose stack, because no container runtime is available here.
+- Request cancellation keeps in-flight state in memory, so it works only with a single
+  gateway instance. Milestone 2 moves it to Redis.
+- Tier routing uses price bands as a proxy for capability. Per-task capability scores
+  arrive with the orchestrator.
+- The new pages reuse the existing hand-written design system rather than shadcn/ui.
+  Monaco arrives with generated files in Milestone 2.
