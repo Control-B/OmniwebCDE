@@ -132,7 +132,7 @@ class Approval(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id"), index=True)
     tenant_id: Mapped[uuid.UUID] = mapped_column(index=True)
-    kind: Mapped[str] = mapped_column(String(40))  # escalation | budget_overage | sensitive_action | human_review
+    kind: Mapped[str] = mapped_column(String(80))  # budget_overage | sensitive_action:<action> | human_review
     status: Mapped[str] = mapped_column(String(16), default="pending")
     reasons: Mapped[list] = mapped_column(JSON, default=list)
     plan_digest: Mapped[str] = mapped_column(String(64))

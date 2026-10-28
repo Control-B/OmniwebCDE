@@ -21,10 +21,7 @@ from .config import Settings
 from .contracts import Evidence, TaskSpec
 from .security import find_secrets
 
-DISCLAIMER = (
-    "Checks passing is evidence, not proof of functional correctness. Security scanners and model reviews do not establish "
-    "regulatory compliance."
-)
+DISCLAIMER = "Checks passing is evidence, not proof of functional correctness. Security scanners and model reviews do not establish regulatory compliance."
 
 # Each entry is a list of alternatives; one of the kinds in each group must pass.
 CRITERIA: dict[str, list[list[str]]] = {
@@ -44,13 +41,19 @@ CRITERIA: dict[str, list[list[str]]] = {
     "content_generation": [["response_schema", "review", "format"]],
 }
 CODE_OUTPUT_TASKS = {
-    "application_scaffolding", "frontend_generation", "backend_generation", "database_generation", "mobile_generation",
-    "incremental_code_edit", "debugging", "test_generation", "deployment_preparation",
+    "application_scaffolding",
+    "frontend_generation",
+    "backend_generation",
+    "database_generation",
+    "mobile_generation",
+    "incremental_code_edit",
+    "debugging",
+    "test_generation",
+    "deployment_preparation",
 }
 # Mandatory gates that apply whatever strategy produced the output.
 MANDATORY = {task: (["secrets_scan", "path_policy"] if task in CODE_OUTPUT_TASKS else []) for task in CRITERIA}
-DENIED_PATHS = [".git/*", ".github/*", ".gitlab-ci.yml", ".env", ".env.*", "*.pem", "*.key", "id_rsa*", "**/secrets/*",
-                "*/.env", "*/.env.*"]
+DENIED_PATHS = [".git/*", ".github/*", ".gitlab-ci.yml", ".env", ".env.*", "*.pem", "*.key", "id_rsa*", "**/secrets/*", "*/.env", "*/.env.*"]
 
 
 @dataclass
@@ -110,8 +113,13 @@ def path_allowed(path: str, allowed: list[str]) -> str | None:
 def check_paths(spec: TaskSpec, files: dict[str, str] | list[str]) -> Evidence:
     paths = list(files)
     problems = [{"path": p, "problem": reason} for p in paths if (reason := path_allowed(p, spec.allowed_paths))]
-    return Evidence(name="engine.path_policy", kind="path_policy", status="failed" if problems else "passed", findings=problems[:100],
-                    output=f"{len(paths)} file(s) checked")
+    return Evidence(
+        name="engine.path_policy",
+        kind="path_policy",
+        status="failed" if problems else "passed",
+        findings=problems[:100],
+        output=f"{len(paths)} file(s) checked",
+    )
 
 
 def check_response_schema(spec: TaskSpec, content: str) -> Evidence:
@@ -152,8 +160,10 @@ def parse_json(content: str):
 
 
 def scan_secrets(files: dict[str, str], settings: Settings) -> Evidence:
-    """gitleaks when installed; otherwise AAEE's built-in patterns, labelled as such."""
+    """AAEE's built-in patterns always run; gitleaks adds its rules when installed."""
+    findings = [{"file": path, "match": hit, "scanner": "aaee"} for path, content in files.items() for hit in find_secrets(content)]
     gitleaks = shutil.which("gitleaks") or shutil.which("gitleaks", path=settings.scanner_path)
+    scanners = ["aaee-patterns"]
     if gitleaks and files:
         with tempfile.TemporaryDirectory(prefix="aaee-scan-") as tmp:
             root = Path(tmp) / "src"
@@ -166,17 +176,30 @@ def scan_secrets(files: dict[str, str], settings: Settings) -> Evidence:
             report = Path(tmp) / "report.json"
             result = subprocess.run(  # noqa: S603
                 [gitleaks, "dir", str(root), "--no-banner", "--report-format", "json", "--report-path", str(report), "--exit-code", "3"],
-                capture_output=True, timeout=120, check=False, env={"PATH": os.environ.get("PATH", "")},
+                capture_output=True,
+                timeout=120,
+                check=False,
+                env={"PATH": os.environ.get("PATH", "")},
             )
             if result.returncode in (0, 3):
-                findings = json.loads(report.read_text() or "[]") if report.exists() else []
-                safe = [{"rule": f.get("RuleID"), "file": f.get("File", "").replace(str(root) + "/", ""), "line": f.get("StartLine")}
-                        for f in findings][:100]
-                return Evidence(name="engine.gitleaks", kind="secrets_scan", status="failed" if safe else "passed", findings=safe,
-                                output=f"gitleaks: {len(safe)} finding(s)")
-    findings = [{"file": path, "match": hit} for path, content in files.items() for hit in find_secrets(content)][:100]
-    return Evidence(name="engine.secret_patterns", kind="secrets_scan", status="failed" if findings else "passed", findings=findings,
-                    output=f"built-in patterns (gitleaks not installed): {len(findings)} finding(s)" if not gitleaks else f"{len(findings)} finding(s)")
+                scanners.append("gitleaks")
+                for finding in json.loads(report.read_text() or "[]") if report.exists() else []:
+                    findings.append(
+                        {
+                            "file": finding.get("File", "").replace(str(root) + "/", ""),
+                            "rule": finding.get("RuleID"),
+                            "line": finding.get("StartLine"),
+                            "scanner": "gitleaks",
+                        }
+                    )
+    findings = findings[:100]
+    return Evidence(
+        name="engine.secrets",
+        kind="secrets_scan",
+        status="failed" if findings else "passed",
+        findings=findings,
+        output=f"{' + '.join(scanners)}: {len(findings)} finding(s)",
+    )
 
 
 def engine_checks(spec: TaskSpec, settings: Settings, content: str | None, files: dict[str, str] | None) -> list[Evidence]:

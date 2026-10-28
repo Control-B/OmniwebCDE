@@ -95,9 +95,9 @@ def classify(request: TaskRequest, identity: Caller, policy: dict, task_id: uuid
         approvals.append("human_review")
 
     capabilities = sorted(set(request.required_capabilities))
-    max_output = (request.prompt.max_output_tokens if request.prompt and request.prompt.max_output_tokens else None) or policy[
-        "max_output_tokens"
-    ][request.task_type]
+    max_output = (request.prompt.max_output_tokens if request.prompt and request.prompt.max_output_tokens else None) or policy["max_output_tokens"][
+        request.task_type
+    ]
     budget = min(request.maximum_budget_usd or settings_budget_usd, 1_000)
     environment = request.execution_environment.model_dump()
     if request.workspace_id and not environment.get("workspace_id"):
@@ -111,8 +111,9 @@ def classify(request: TaskRequest, identity: Caller, policy: dict, task_id: uuid
         workspace_id=request.workspace_id,
         task_type=request.task_type,
         task_description=text,
-        input_artifact_references=[{"path": a.path, "chars": len(a.content or ""), "artifact_id": str(a.artifact_id) if a.artifact_id else None}
-                                   for a in request.input_artifacts],
+        input_artifact_references=[
+            {"path": a.path, "chars": len(a.content or ""), "artifact_id": str(a.artifact_id) if a.artifact_id else None} for a in request.input_artifacts
+        ],
         required_capabilities=capabilities,
         min_context_tokens=context_tokens + max_output,
         complexity=complexity,

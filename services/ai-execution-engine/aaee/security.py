@@ -47,9 +47,7 @@ def caller(request: Request, settings: Settings = Depends(get_settings)) -> Call
     if not header.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Service token required")
     try:
-        claims = jwt.decode(
-            header[7:], service_secret(settings), algorithms=["HS256"], audience=AUDIENCE, options={"require": ["exp", "iat", "org"]}
-        )
+        claims = jwt.decode(header[7:], service_secret(settings), algorithms=["HS256"], audience=AUDIENCE, options={"require": ["exp", "iat", "org"]})
         return Caller(
             tenant_id=uuid.UUID(claims["org"]),
             user_id=uuid.UUID(claims["user"]) if claims.get("user") else None,

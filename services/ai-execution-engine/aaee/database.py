@@ -2,13 +2,14 @@ from collections.abc import AsyncIterator
 
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from .config import get_settings
 
 
 def make_engine(url: str) -> AsyncEngine:
     if url.startswith("sqlite"):
-        engine = create_async_engine(url, connect_args={"timeout": 30})
+        engine = create_async_engine(url, connect_args={"timeout": 30}, poolclass=NullPool)
 
         # SQLite has no SELECT ... FOR UPDATE. BEGIN IMMEDIATE takes the write lock at the start
         # of every transaction, so concurrent budget reservations serialize instead of racing.

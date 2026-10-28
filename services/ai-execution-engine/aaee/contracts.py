@@ -34,11 +34,20 @@ Strategy = Literal["deterministic", "low_cost_model", "hosted_model", "human_app
 DevelopmentPhase = Literal["discovery", "architecture", "scaffolding", "implementation", "debugging", "testing", "security_review", "release"]
 PHASES: tuple[str, ...] = DevelopmentPhase.__args__  # type: ignore[attr-defined]
 PHASE_OF_TASK = {
-    "requirement_analysis": "discovery", "content_generation": "discovery", "documentation": "release",
-    "architecture_design": "architecture", "application_scaffolding": "scaffolding", "frontend_generation": "implementation",
-    "backend_generation": "implementation", "database_generation": "implementation", "mobile_generation": "implementation",
-    "incremental_code_edit": "implementation", "debugging": "debugging", "test_generation": "testing",
-    "security_review": "security_review", "deployment_preparation": "release",
+    "requirement_analysis": "discovery",
+    "content_generation": "discovery",
+    "documentation": "release",
+    "architecture_design": "architecture",
+    "application_scaffolding": "scaffolding",
+    "frontend_generation": "implementation",
+    "backend_generation": "implementation",
+    "database_generation": "implementation",
+    "mobile_generation": "implementation",
+    "incremental_code_edit": "implementation",
+    "debugging": "debugging",
+    "test_generation": "testing",
+    "security_review": "security_review",
+    "deployment_preparation": "release",
 }
 
 # Actions a task may need. Sensitive ones always require a human approval enforced here,
@@ -170,9 +179,26 @@ class Evidence(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str = Field(max_length=80)  # e.g. "web.typecheck"
     kind: Literal[
-        "typecheck", "lint", "unit_tests", "build", "e2e", "api_tests", "openapi", "integration_tests",
-        "migrations", "schema", "secrets_scan", "sast", "dependency_scan", "dast", "mobile_config",
-        "mobile_bundle", "response_schema", "format", "review", "path_policy",
+        "typecheck",
+        "lint",
+        "unit_tests",
+        "build",
+        "e2e",
+        "api_tests",
+        "openapi",
+        "integration_tests",
+        "migrations",
+        "schema",
+        "secrets_scan",
+        "sast",
+        "dependency_scan",
+        "dast",
+        "mobile_config",
+        "mobile_bundle",
+        "response_schema",
+        "format",
+        "review",
+        "path_policy",
     ]
     status: Literal["passed", "failed", "unavailable", "skipped"]
     duration_ms: int = Field(default=0, ge=0)
@@ -192,6 +218,9 @@ class ValidationReport(BaseModel):
     items: list[Evidence] = Field(min_length=1, max_length=60)
     output_digest: str | None = Field(default=None, max_length=64)  # hash of the produced tree
     changed_files: list[str] = Field(default_factory=list, max_length=500)
+    # Contents of files a caller-side tool produced, so AAEE can apply its mandatory path and
+    # secret checks to output it did not generate itself.
+    output_files: list[ArtifactInput] = Field(default_factory=list, max_length=400)
     repair_context: RepairContext | None = None
     continue_automatically: bool = True
 

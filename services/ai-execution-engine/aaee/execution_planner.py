@@ -75,14 +75,27 @@ class Candidate:
 
     def view(self) -> dict:
         return {
-            "key": self.key, "strategy": self.strategy, "level": self.level_name, "tool": self.tool, "tool_runner": self.tool_runner,
-            "coverage": self.coverage, "provider": self.model.provider if self.model else None,
-            "model_id": self.model.model_id if self.model else None, "model_family": self.model.family if self.model else None,
-            "hosting_mode": self.model.hosting_mode if self.model else None, "billing_model": self.model.billing_model if self.model else "none",
-            "estimated_input_tokens": self.est_input_tokens, "estimated_output_tokens": self.est_output_tokens,
-            "max_output_tokens": self.max_output_tokens, "expected_cost_usd": round(self.expected_cost_usd, 6),
-            "worst_case_usd": round(self.worst_case_usd, 6), "p_success": round(self.p_success, 4), "p_source": self.p_source,
-            "samples": self.samples, "latency_ms": self.latency_ms, "notes": self.notes,
+            "key": self.key,
+            "strategy": self.strategy,
+            "level": self.level_name,
+            "tool": self.tool,
+            "tool_runner": self.tool_runner,
+            "coverage": self.coverage,
+            "provider": self.model.provider if self.model else None,
+            "model_id": self.model.model_id if self.model else None,
+            "model_family": self.model.family if self.model else None,
+            "hosting_mode": self.model.hosting_mode if self.model else None,
+            "billing_model": self.model.billing_model if self.model else "none",
+            "estimated_input_tokens": self.est_input_tokens,
+            "estimated_output_tokens": self.est_output_tokens,
+            "max_output_tokens": self.max_output_tokens,
+            "expected_cost_usd": round(self.expected_cost_usd, 6),
+            "worst_case_usd": round(self.worst_case_usd, 6),
+            "p_success": round(self.p_success, 4),
+            "p_source": self.p_source,
+            "samples": self.samples,
+            "latency_ms": self.latency_ms,
+            "notes": self.notes,
         }
 
 
@@ -139,8 +152,9 @@ def _probability(candidate: Candidate, spec: TaskSpec, policy: dict, stats: Stat
     candidate.samples = observed.samples if observed else 0
 
 
-def build_candidates(spec: TaskSpec, models: list[ModelView], policy: dict, stats: Stats, ctx: PlanContext,
-                     artifacts: dict[str, str]) -> tuple[list[Candidate], list[dict]]:
+def build_candidates(
+    spec: TaskSpec, models: list[ModelView], policy: dict, stats: Stats, ctx: PlanContext, artifacts: dict[str, str]
+) -> tuple[list[Candidate], list[dict]]:
     excluded: list[dict] = []
     candidates: list[Candidate] = []
     prompt_text = ((spec.prompt or {}).get("system", "") + (spec.prompt or {}).get("user", "")) or spec.task_description
@@ -191,15 +205,18 @@ def build_candidates(spec: TaskSpec, models: list[ModelView], policy: dict, stat
             if preferred and model not in preferred:
                 reasons.append(f"the {spec.development_phase} phase prefers other models")
             if not phase["min_level"] <= LEVELS[level] <= phase["max_level"]:
-                reasons.append(f"{level.replace('_', ' ')} is outside the {spec.development_phase} phase's levels "
-                               f"{phase['min_level']}-{phase['max_level']}")
+                reasons.append(f"{level.replace('_', ' ')} is outside the {spec.development_phase} phase's levels {phase['min_level']}-{phase['max_level']}")
         if reasons:
             excluded.append({"key": model.key, "reasons": reasons})
             continue
         output_cap = min(max_output, model.max_output_tokens or max_output)
         candidate = Candidate(
-            "low_cost_model" if level == "low_cost" else "hosted_model", level, model=model,
-            est_input_tokens=est_input, est_output_tokens=min(est_output, output_cap), max_output_tokens=output_cap,
+            "low_cost_model" if level == "low_cost" else "hosted_model",
+            level,
+            model=model,
+            est_input_tokens=est_input,
+            est_output_tokens=min(est_output, output_cap),
+            max_output_tokens=output_cap,
         )
         candidate.expected_cost_usd = model.cost(est_input, candidate.est_output_tokens)
         candidate.worst_case_usd = model.cost(int(est_input * margin), output_cap)
@@ -250,8 +267,7 @@ def chain_economics(chain: list[Candidate], penalty: float) -> tuple[float, floa
     return expected, 1 - reach
 
 
-def plan(spec: TaskSpec, models: list[ModelView], policy: dict, stats: Stats, ctx: PlanContext,
-         artifacts: dict[str, str] | None = None) -> dict:
+def plan(spec: TaskSpec, models: list[ModelView], policy: dict, stats: Stats, ctx: PlanContext, artifacts: dict[str, str] | None = None) -> dict:
     artifacts = artifacts or {}
     candidates, excluded = build_candidates(spec, models, policy, stats, ctx, artifacts)
     attempts_left = max(1, spec.maximum_attempts - ctx.attempts_used)
@@ -259,17 +275,24 @@ def plan(spec: TaskSpec, models: list[ModelView], policy: dict, stats: Stats, ct
     for candidate in candidates:
         chain = chain_for(candidate, candidates, attempts_left)
         expected, p_chain = chain_economics(chain, policy["failure_penalty_usd"])
-        ranked.append({
-            "candidate": candidate, "chain": chain, "expected_cost_usd": expected, "p_chain": p_chain,
-            "score": expected / max(p_chain, 1e-6), "viable": p_chain >= spec.quality_threshold,
-        })
+        ranked.append(
+            {
+                "candidate": candidate,
+                "chain": chain,
+                "expected_cost_usd": expected,
+                "p_chain": p_chain,
+                "score": expected / max(p_chain, 1e-6),
+                "viable": p_chain >= spec.quality_threshold,
+            }
+        )
     ranked.sort(key=lambda r: (not r["viable"], r["score"], -r["p_chain"], -(r["candidate"].model.priority if r["candidate"].model else 0)))
     warnings: list[str] = []
     chosen = ranked[0] if ranked else None
     if chosen and not chosen["viable"]:
         chosen = max(ranked, key=lambda r: (r["p_chain"], -r["score"]))
-        warnings.append(f"No plan reaches the quality threshold {spec.quality_threshold:.2f}; using the most reliable chain "
-                        f"(estimated {chosen['p_chain']:.2f})")
+        warnings.append(
+            f"No plan reaches the quality threshold {spec.quality_threshold:.2f}; using the most reliable chain (estimated {chosen['p_chain']:.2f})"
+        )
     if chosen and policy["low_cost_first"] and chosen["candidate"].strategy not in {"deterministic", "low_cost_model"}:
         cheap = next((r for r in ranked if r["viable"] and r["candidate"].strategy == "low_cost_model"), None)
         rival = chosen["candidate"]
@@ -298,8 +321,13 @@ def plan(spec: TaskSpec, models: list[ModelView], policy: dict, stats: Stats, ct
         "p_chain": round(chosen["p_chain"], 4) if chosen else 0.0,
         "reservation_usd": round(chosen["candidate"].worst_case_usd, 6) if chosen else 0.0,
         "ranked": [
-            {**r["candidate"].view(), "chain_expected_cost_usd": round(r["expected_cost_usd"], 6), "p_chain": round(r["p_chain"], 4),
-             "cost_per_success_usd": round(r["score"], 6), "viable": r["viable"]}
+            {
+                **r["candidate"].view(),
+                "chain_expected_cost_usd": round(r["expected_cost_usd"], 6),
+                "p_chain": round(r["p_chain"], 4),
+                "cost_per_success_usd": round(r["score"], 6),
+                "viable": r["viable"],
+            }
             for r in ranked[:12]
         ],
         "excluded": excluded[:40],
@@ -315,12 +343,21 @@ def plan(spec: TaskSpec, models: list[ModelView], policy: dict, stats: Stats, ct
 def candidate_from_view(view: dict, models: list[ModelView]) -> Candidate | None:
     """Rebuild the chosen candidate when executing a stored plan."""
     if view.get("strategy") == "deterministic":
-        return Candidate("deterministic", "deterministic", tool=view["tool"], tool_runner=view["tool_runner"], coverage=view.get("coverage"),
-                         p_success=view["p_success"])
+        return Candidate(
+            "deterministic", "deterministic", tool=view["tool"], tool_runner=view["tool_runner"], coverage=view.get("coverage"), p_success=view["p_success"]
+        )
     model = next((m for m in models if m.provider == view.get("provider") and m.model_id == view.get("model_id")), None)
     if not model:
         return None
-    return Candidate(view["strategy"], view["level"], model=model, est_input_tokens=view["estimated_input_tokens"],
-                     est_output_tokens=view["estimated_output_tokens"], max_output_tokens=view["max_output_tokens"],
-                     expected_cost_usd=view["expected_cost_usd"], worst_case_usd=view["worst_case_usd"], p_success=view["p_success"],
-                     p_source=view["p_source"])
+    return Candidate(
+        view["strategy"],
+        view["level"],
+        model=model,
+        est_input_tokens=view["estimated_input_tokens"],
+        est_output_tokens=view["estimated_output_tokens"],
+        max_output_tokens=view["max_output_tokens"],
+        expected_cost_usd=view["expected_cost_usd"],
+        worst_case_usd=view["worst_case_usd"],
+        p_success=view["p_success"],
+        p_source=view["p_source"],
+    )

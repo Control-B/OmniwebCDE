@@ -42,8 +42,17 @@ def test_unknown_pricing_is_excluded_from_optimization():
 
 
 def test_admin_validated_pricing_makes_a_model_routable():
-    overlay = ModelPolicy(scope="platform", provider="openrouter", model_id="mystery/unpriced-model", enabled=True, priority=0,
-                          validated_input_usd_per_mtok=0.01, validated_output_usd_per_mtok=0.02, capabilities_add=[], capabilities_remove=[])
+    overlay = ModelPolicy(
+        scope="platform",
+        provider="openrouter",
+        model_id="mystery/unpriced-model",
+        enabled=True,
+        priority=0,
+        validated_input_usd_per_mtok=0.01,
+        validated_output_usd_per_mtok=0.02,
+        capabilities_add=[],
+        capabilities_remove=[],
+    )
     model = next(v for v in views(overlay) if v.model_id == "mystery/unpriced-model")
     assert model.pricing_status == "admin_validated" and model.pricing_known
 
@@ -51,8 +60,16 @@ def test_admin_validated_pricing_makes_a_model_routable():
 def test_self_hosted_needs_admin_infrastructure_cost():
     entry = {**MODELS[0], "provider": "openai_compatible", "pricing_source": "litellm"}
     assert build_view(entry, []).pricing_status == "unknown"
-    overlay = ModelPolicy(scope="platform", provider="openai_compatible", model_id=entry["model_id"], enabled=True, priority=0,
-                          infra_usd_per_mtok=0.08, capabilities_add=[], capabilities_remove=[])
+    overlay = ModelPolicy(
+        scope="platform",
+        provider="openai_compatible",
+        model_id=entry["model_id"],
+        enabled=True,
+        priority=0,
+        infra_usd_per_mtok=0.08,
+        capabilities_add=[],
+        capabilities_remove=[],
+    )
     view = build_view(entry, [overlay])
     assert view.pricing_status == "admin_validated" and view.cost(1_000_000, 0) == 0.08
 
@@ -78,8 +95,7 @@ def test_economical_grok_models_join_the_low_cost_stage():
 
 
 def test_development_phase_controls_levels_providers_and_preferred_models():
-    architecture = plan(spec_for(task_type="architecture_design", task_description="Design the data model"), views(), DEFAULT_POLICY,
-                        NoStats(), ctx())
+    architecture = plan(spec_for(task_type="architecture_design", task_description="Design the data model"), views(), DEFAULT_POLICY, NoStats(), ctx())
     assert architecture["chosen"]["level"] in {"hosted_standard", "hosted_advanced"}
     policy = validate_config({"phases": {"implementation": {"providers": ["openai"], "preferred_models": ["openai/gpt-5-mini"]}}})
     result = plan(spec_for(), views(), policy, NoStats(), ctx())
@@ -91,12 +107,14 @@ def test_development_phase_controls_levels_providers_and_preferred_models():
 
 
 def test_measured_cheaper_hosted_model_displaces_low_cost_models():
-    stats = Measured({
-        "openai/gpt-5-mini": Observation(samples=200, successes=196, lower_bound=0.95, mean_cost_usd=0.001, p50_latency_ms=900),
-        "openrouter/openai/gpt-oss-20b": Observation(samples=200, successes=40, lower_bound=0.15, mean_cost_usd=0.0005, p50_latency_ms=900),
-        "openrouter/openai/gpt-oss-120b": Observation(samples=200, successes=50, lower_bound=0.2, mean_cost_usd=0.0008, p50_latency_ms=900),
-        "xai/grok-code-fast-1": Observation(samples=200, successes=50, lower_bound=0.2, mean_cost_usd=0.0008, p50_latency_ms=900),
-    })
+    stats = Measured(
+        {
+            "openai/gpt-5-mini": Observation(samples=200, successes=196, lower_bound=0.95, mean_cost_usd=0.001, p50_latency_ms=900),
+            "openrouter/openai/gpt-oss-20b": Observation(samples=200, successes=40, lower_bound=0.15, mean_cost_usd=0.0005, p50_latency_ms=900),
+            "openrouter/openai/gpt-oss-120b": Observation(samples=200, successes=50, lower_bound=0.2, mean_cost_usd=0.0008, p50_latency_ms=900),
+            "xai/grok-code-fast-1": Observation(samples=200, successes=50, lower_bound=0.2, mean_cost_usd=0.0008, p50_latency_ms=900),
+        }
+    )
     result = plan(spec_for(), views(), DEFAULT_POLICY, stats, ctx())
     assert result["chosen"]["model_id"] == "gpt-5-mini"
     assert result["chosen"]["p_source"] == "observed"
@@ -166,14 +184,18 @@ def test_redaction():
 
 def test_server_only_fields_and_auth(client, org):
     assert client.post("/v1/plan", json={"task_type": "documentation", "task_description": "x"}).status_code == 401
-    response = client.post("/v1/plan", json={"task_type": "documentation", "task_description": "Write docs", "risk_level": "low",
-                                             "tenant_id": str(uuid.uuid4())}, headers=headers(org))
+    response = client.post(
+        "/v1/plan",
+        json={"task_type": "documentation", "task_description": "Write docs", "risk_level": "low", "tenant_id": str(uuid.uuid4())},
+        headers=headers(org),
+    )
     assert response.status_code == 422 and "risk_level" in response.json()["detail"]
 
 
 def test_plan_endpoint_reads_registry_and_budget(client, org):
-    response = client.post("/v1/plan", json={"task_type": "frontend_generation", "task_description": "Build a pricing page"},
-                           headers=headers(org, user=uuid.uuid4()))
+    response = client.post(
+        "/v1/plan", json={"task_type": "frontend_generation", "task_description": "Build a pricing page"}, headers=headers(org, user=uuid.uuid4())
+    )
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["plan"]["chosen"]["strategy"] == "low_cost_model"

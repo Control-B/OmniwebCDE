@@ -18,8 +18,13 @@ from .models import ModelPolicy
 from .security import Caller
 
 HOSTING = {
-    "openai": "first_party_api", "anthropic": "first_party_api", "gemini": "first_party_api", "xai": "first_party_api",
-    "openrouter": "inference_provider", "openai_compatible": "self_hosted", "ollama": "self_hosted",
+    "openai": "first_party_api",
+    "anthropic": "first_party_api",
+    "gemini": "first_party_api",
+    "xai": "first_party_api",
+    "openrouter": "inference_provider",
+    "openai_compatible": "self_hosted",
+    "ollama": "self_hosted",
     "omniweb_dev": "development",
 }
 KNOWN_PRICING_SOURCES = {"provider", "litellm"}
@@ -77,14 +82,28 @@ class ModelView:
 
     def view(self) -> dict:
         return {
-            "key": self.key, "provider": self.provider, "model_id": self.model_id, "display_name": self.display_name,
-            "family": self.family, "hosting_mode": self.hosting_mode, "capabilities": sorted(self.capabilities),
-            "context_window": self.context_window, "max_output_tokens": self.max_output_tokens,
-            "input_usd_per_mtok": self.input_usd_per_mtok, "output_usd_per_mtok": self.output_usd_per_mtok,
-            "cached_usd_per_mtok": self.cached_usd_per_mtok, "infra_usd_per_mtok": self.infra_usd_per_mtok,
-            "pricing_status": self.pricing_status, "pricing_source": self.pricing_source, "billing_model": self.billing_model,
-            "enabled": self.enabled, "priority": self.priority, "rate_limit_rpm": self.rate_limit_rpm, "deprecated": self.deprecated,
-            "api": self.api, "notes": self.notes,
+            "key": self.key,
+            "provider": self.provider,
+            "model_id": self.model_id,
+            "display_name": self.display_name,
+            "family": self.family,
+            "hosting_mode": self.hosting_mode,
+            "capabilities": sorted(self.capabilities),
+            "context_window": self.context_window,
+            "max_output_tokens": self.max_output_tokens,
+            "input_usd_per_mtok": self.input_usd_per_mtok,
+            "output_usd_per_mtok": self.output_usd_per_mtok,
+            "cached_usd_per_mtok": self.cached_usd_per_mtok,
+            "infra_usd_per_mtok": self.infra_usd_per_mtok,
+            "pricing_status": self.pricing_status,
+            "pricing_source": self.pricing_source,
+            "billing_model": self.billing_model,
+            "enabled": self.enabled,
+            "priority": self.priority,
+            "rate_limit_rpm": self.rate_limit_rpm,
+            "deprecated": self.deprecated,
+            "api": self.api,
+            "notes": self.notes,
         }
 
 
@@ -108,14 +127,23 @@ def build_view(entry: dict, overlays: list[ModelPolicy]) -> ModelView:
         capabilities.add("tools")
     source = entry.get("pricing_source") or "unknown"
     view = ModelView(
-        provider=provider, model_id=model_id, display_name=entry.get("display_name") or model_id,
-        family=family_of(provider, model_id), hosting_mode=hosting, capabilities=capabilities,
-        context_window=entry.get("context_window"), max_output_tokens=entry.get("max_output_tokens"),
-        input_usd_per_mtok=entry.get("input_usd_per_mtok"), output_usd_per_mtok=entry.get("output_usd_per_mtok"),
-        cached_usd_per_mtok=entry.get("cached_input_usd_per_mtok"), infra_usd_per_mtok=0.0,
-        pricing_status="unknown", pricing_source=source,
+        provider=provider,
+        model_id=model_id,
+        display_name=entry.get("display_name") or model_id,
+        family=family_of(provider, model_id),
+        hosting_mode=hosting,
+        capabilities=capabilities,
+        context_window=entry.get("context_window"),
+        max_output_tokens=entry.get("max_output_tokens"),
+        input_usd_per_mtok=entry.get("input_usd_per_mtok"),
+        output_usd_per_mtok=entry.get("output_usd_per_mtok"),
+        cached_usd_per_mtok=entry.get("cached_input_usd_per_mtok"),
+        infra_usd_per_mtok=0.0,
+        pricing_status="unknown",
+        pricing_source=source,
         billing_model=entry.get("billing_model") or ("customer" if entry.get("scope") == "organization" else "platform"),
-        deprecated=bool(entry.get("deprecated")), api="responses" if "api:responses" in capabilities else "chat",
+        deprecated=bool(entry.get("deprecated")),
+        api="responses" if "api:responses" in capabilities else "chat",
     )
     if source == "development":
         view.pricing_status = "development"
@@ -173,9 +201,7 @@ class Registry:
 
     async def load(self, db: AsyncSession, identity: Caller) -> list[ModelView]:
         entries = await self.raw(identity)
-        overlays = list(
-            await db.scalars(select(ModelPolicy).where(or_(ModelPolicy.scope == "platform", ModelPolicy.scope == str(identity.tenant_id))))
-        )
+        overlays = list(await db.scalars(select(ModelPolicy).where(or_(ModelPolicy.scope == "platform", ModelPolicy.scope == str(identity.tenant_id)))))
         by_key: dict[tuple[str, str], list[ModelPolicy]] = {}
         for overlay in overlays:
             by_key.setdefault((overlay.provider, overlay.model_id), []).append(overlay)

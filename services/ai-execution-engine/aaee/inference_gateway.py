@@ -45,8 +45,19 @@ class ChatResult:
 class Gateway(Protocol):
     async def models(self, identity: Caller) -> list[dict]: ...
     async def budgets(self, identity: Caller, project_id: uuid.UUID | None) -> list[dict]: ...
-    async def chat(self, identity: Caller, project_id: uuid.UUID | None, *, model: str, messages: list[dict], max_output_tokens: int,
-                   task_budget_usd: float, response_format: dict | None, request_id: str, attribution: dict) -> ChatResult: ...
+    async def chat(
+        self,
+        identity: Caller,
+        project_id: uuid.UUID | None,
+        *,
+        model: str,
+        messages: list[dict],
+        max_output_tokens: int,
+        task_budget_usd: float,
+        response_format: dict | None,
+        request_id: str,
+        attribution: dict,
+    ) -> ChatResult: ...
     async def cancel(self, identity: Caller, request_id: str) -> None: ...
 
 
@@ -64,8 +75,13 @@ class HttpGateway:
 
     def _headers(self, identity: Caller, project_id: uuid.UUID | None) -> dict:
         now = datetime.now(UTC)
-        claims = {"org": str(identity.tenant_id), "role": identity.role, "aud": GATEWAY_AUDIENCE, "iat": now,
-                  "exp": now + timedelta(seconds=self.settings.gateway_timeout_seconds + 60)}
+        claims = {
+            "org": str(identity.tenant_id),
+            "role": identity.role,
+            "aud": GATEWAY_AUDIENCE,
+            "iat": now,
+            "exp": now + timedelta(seconds=self.settings.gateway_timeout_seconds + 60),
+        }
         if identity.user_id:
             claims["user"] = str(identity.user_id)
         if project_id:
@@ -74,8 +90,7 @@ class HttpGateway:
 
     async def _request(self, method: str, path: str, identity: Caller, project_id: uuid.UUID | None = None, **kwargs) -> httpx.Response:
         try:
-            async with httpx.AsyncClient(base_url=self.settings.gateway_url, transport=self.transport,
-                                         timeout=self.settings.gateway_timeout_seconds) as client:
+            async with httpx.AsyncClient(base_url=self.settings.gateway_url, transport=self.transport, timeout=self.settings.gateway_timeout_seconds) as client:
                 return await client.request(method, path, headers=self._headers(identity, project_id), **kwargs)
         except httpx.TimeoutException as exc:
             raise GatewayError("timeout", "Model gateway timed out") from exc
@@ -96,12 +111,16 @@ class HttpGateway:
             raise GatewayError("unavailable", f"Budget lookup failed ({response.status_code})", response.status_code)
         return response.json().get("budgets", [])
 
-    async def chat(self, identity, project_id, *, model, messages, max_output_tokens, task_budget_usd, response_format, request_id,
-                   attribution) -> ChatResult:
+    async def chat(self, identity, project_id, *, model, messages, max_output_tokens, task_budget_usd, response_format, request_id, attribution) -> ChatResult:
         body = {
-            "messages": messages, "model": model, "max_output_tokens": max_output_tokens,
-            "task_budget_usd": round(max(task_budget_usd, 0.000001), 6), "agent": attribution.get("agent", "aaee"),
-            "request_id": request_id, "task_id": attribution.get("task_id"), "execution_id": attribution.get("execution_id"),
+            "messages": messages,
+            "model": model,
+            "max_output_tokens": max_output_tokens,
+            "task_budget_usd": round(max(task_budget_usd, 0.000001), 6),
+            "agent": attribution.get("agent", "aaee"),
+            "request_id": request_id,
+            "task_id": attribution.get("task_id"),
+            "execution_id": attribution.get("execution_id"),
             "strategy": attribution.get("strategy"),
         }
         if response_format:
@@ -119,10 +138,16 @@ class HttpGateway:
         data = response.json()
         usage = data.get("usage", {})
         return ChatResult(
-            content=data.get("content", ""), provider=data["provider"], model_id=data["model_id"],
-            billing_model=data.get("billing_model", "platform"), input_tokens=usage.get("input_tokens", 0),
-            output_tokens=usage.get("output_tokens", 0), cached_tokens=usage.get("cached_tokens", 0),
-            cost_usd=float(usage.get("cost_usd", 0)), latency_ms=int(usage.get("latency_ms", 0)), request_id=data.get("request_id", request_id),
+            content=data.get("content", ""),
+            provider=data["provider"],
+            model_id=data["model_id"],
+            billing_model=data.get("billing_model", "platform"),
+            input_tokens=usage.get("input_tokens", 0),
+            output_tokens=usage.get("output_tokens", 0),
+            cached_tokens=usage.get("cached_tokens", 0),
+            cost_usd=float(usage.get("cost_usd", 0)),
+            latency_ms=int(usage.get("latency_ms", 0)),
+            request_id=data.get("request_id", request_id),
             development_model=bool(data.get("development_model")),
         )
 
