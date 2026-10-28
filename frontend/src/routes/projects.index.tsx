@@ -22,9 +22,14 @@ export const STATUS_LABEL: Record<string, string> = {
   draft: 'Draft',
   planning: 'Planning',
   generating: 'Generating',
+  building: 'Building',
   ready: 'Ready',
+  needs_attention: 'Needs attention',
   failed: 'Failed',
   not_deployed: 'Not deployed',
+  deploying: 'Deploying',
+  development_live: 'Live (development)',
+  production_live: 'Live (production)',
 }
 
 export function relativeTime(iso: string) {

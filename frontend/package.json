@@ -14,6 +14,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
     "@tailwindcss/vite": "^4.1.18",
     "@tanstack/react-devtools": "0.10.13",
     "@tanstack/react-query": "^5.105.0",
@@ -23,6 +24,7 @@
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "lucide-react": "^1.62.0",
+    "monaco-editor": "^0.57.0",
     "nitro": "3.0.260610-beta",
     "oidc-client-ts": "^3.5.0",
     "react": "^19.2.0",

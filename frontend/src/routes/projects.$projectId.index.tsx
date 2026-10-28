@@ -7,13 +7,13 @@ import {
   CircleAlert,
   Database,
   FileCode2,
+  Hammer,
   KeyRound,
   ListChecks,
   Loader2,
   Maximize2,
   Minimize2,
   Monitor,
-  MousePointerClick,
   PanelLeft,
   PanelRight,
   Plus,
@@ -28,12 +28,17 @@ import {
   Waypoints,
   X,
 } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Group, Panel, Separator, usePanelRef } from 'react-resizable-panels'
 import { z } from 'zod'
 
+import { CodePanel } from '../components/builder/CodePanel'
+import { DeployPanel } from '../components/builder/DeployPanel'
+import { ApprovalBanner, BuildLogs, HistoryPanel, RoutesPanel, RunCard, SchemaPanel, SpecView } from '../components/builder/Panels'
+import { PreviewFrame, PreviewToolbarActions } from '../components/builder/Preview'
 import { RequireAuth } from '../components/studio/AppNav'
 import { platform, type ChatMessage, type Execution, type Tier } from '../lib/api'
+import { builder, type Run } from '../lib/builder'
 import { STATUS_LABEL, relativeTime, usd } from './projects.index'
 
 export const Route = createFileRoute('/projects/$projectId/')({
@@ -84,8 +89,17 @@ function Studio() {
   const project = useQuery({ queryKey: ['project', projectId], queryFn: () => platform.project(projectId) })
   const messages = useQuery({ queryKey: ['messages', projectId], queryFn: () => platform.messages(projectId) })
   const executions = useQuery({ queryKey: ['executions', projectId], queryFn: () => platform.executions(projectId) })
+  const state = useQuery({
+    queryKey: ['builder', projectId],
+    queryFn: () => builder.state(projectId),
+    refetchInterval: (q) => (q.state.data?.active ? 1500 : false),
+  })
+  const runs = useQuery({ queryKey: ['runs', projectId, state.data?.run?.id, state.data?.run?.status], queryFn: () => builder.runs(projectId) })
   const [leftTab, setLeftTab] = useState<LeftTab>('chat')
-  const [rightTab, setRightTab] = useState<RightTab>('env')
+  const [rightTab, setRightTab] = useState<RightTab>('files')
+  const [selecting, setSelecting] = useState(false)
+  const [openPath, setOpenPath] = useState<string | null>(null)
+  const [previewKey, setPreviewKey] = useState(0)
   const [device, setDevice] = useState<Device>('desktop')
   const [fullscreen, setFullscreen] = useState<'none' | 'preview' | 'code'>('none')
   const [leftOpen, setLeftOpen] = useState(true)
@@ -118,24 +132,60 @@ function Studio() {
     },
   })
 
+  const refreshBuilder = () => void queryClient.invalidateQueries({ queryKey: ['builder', projectId] })
+
+  const edit = useMutation({
+    mutationFn: (instruction: string) => builder.edit(projectId, instruction),
+    onSettled: () => {
+      refreshBuilder()
+      void queryClient.invalidateQueries({ queryKey: ['messages', projectId] })
+    },
+  })
+
+  const generate = useMutation({
+    mutationFn: () => builder.generate(projectId),
+    onSuccess: () => setMobilePane('center'),
+    onSettled: refreshBuilder,
+  })
+
+  const cancelRun = (run: Run) => void builder.cancel(projectId, run.id).finally(refreshBuilder)
+
+  const hasSpec = Boolean(state.data?.spec)
+  const busy = Boolean(state.data?.active)
+
   const submit = (value: string) => {
     const content = value.trim()
-    if (!content || send.isPending) return
+    if (!content || send.isPending || edit.isPending) return
     setInput('')
     send.reset()
-    send.mutate({ content, id: requestId() })
+    edit.reset()
+    if (hasSpec) edit.mutate(content)
+    else send.mutate({ content, id: requestId() })
   }
 
   useEffect(() => {
-    if (!start || autoStarted.current || !project.data || !messages.data) return
+    if (!start || autoStarted.current || !project.data || !state.data) return
     autoStarted.current = true
     void navigate({ to: '/projects/$projectId', params: { projectId }, search: {}, replace: true })
-    if (messages.data.length === 0) submit(project.data.prompt)
-  }, [start, project.data, messages.data])
+    if (!state.data.spec && !state.data.run && project.data.your_role !== 'viewer') generate.mutate()
+  }, [start, project.data, state.data])
+
+  const runStatus = state.data?.run?.status
+  const headSha = state.data?.head_sha ?? null
+  useEffect(() => {
+    if (!runStatus) return
+    refreshAll()
+  }, [runStatus, headSha])
 
   useEffect(() => {
     chatEnd.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
-  }, [messages.data?.length, pending])
+  }, [messages.data?.length, pending, runStatus])
+
+  const openFile = useCallback((path: string) => {
+    setOpenPath(path)
+    setRightTab('files')
+    setMobilePane('right')
+  }, [])
 
   const toggle = (side: 'left' | 'right') => {
     const panel = side === 'left' ? leftPanel.current : rightPanel.current
@@ -178,11 +228,14 @@ function Studio() {
         <div className="st-chat">
           <div className="bd-messages">
             {messages.isLoading && <span className="st-spinner" aria-label="Loading messages" />}
-            {messages.data?.length === 0 && !pending && (
+            {messages.data?.length === 0 && !pending && !state.data?.run && (
               <div className="st-empty st-empty-tight">
                 <Sparkles size={18} />
-                <p className="st-muted">Describe what you want to build. The requirements assistant will turn it into user stories and ask only what matters.</p>
-                <button type="button" className="lv-btn lv-btn-light" onClick={() => submit(p.prompt)} disabled={readOnly}>Start with the project prompt</button>
+                <p className="st-muted">Refine the idea with the requirements assistant, or generate a working first version straight from your prompt. You can keep changing it in chat afterwards.</p>
+                <div className="st-row">
+                  <button type="button" className="lv-btn lv-btn-light" onClick={() => generate.mutate()} disabled={readOnly || generate.isPending}><Hammer size={14} /> Generate app</button>
+                  <button type="button" className="lv-btn lv-btn-ghost" onClick={() => submit(p.prompt)} disabled={readOnly}>Discuss requirements first</button>
+                </div>
               </div>
             )}
             {messages.data?.map((message) => <Bubble key={message.id} message={message} />)}
@@ -201,11 +254,17 @@ function Studio() {
                 </div>
               </>
             )}
-            {send.error && (
-              <div className="st-alert st-alert-error">
-                <CircleAlert size={14} /> {send.error.message}
+            {state.data?.run && (busy || runStatus === 'awaiting_approval' || state.data.run.status === 'failed') && (
+              <div className="bd-msg bd-msg-assistant">
+                <span className="bd-avatar"><Hammer size={13} /></span>
+                <RunCard run={state.data.run} onCancel={readOnly ? undefined : () => cancelRun(state.data!.run!)} />
               </div>
             )}
+            {[send.error, edit.error, generate.error].filter(Boolean).map((error) => (
+              <div key={error!.message} className="st-alert st-alert-error">
+                <CircleAlert size={14} /> {error!.message}
+              </div>
+            ))}
             {alerts.map((alert) => <div key={alert} className="st-alert"><CircleAlert size={14} /> {alert}</div>)}
             <div ref={chatEnd} />
           </div>
@@ -227,39 +286,40 @@ function Studio() {
               }}
               rows={2}
               disabled={readOnly}
-              placeholder={readOnly ? 'You have view-only access' : 'Describe a requirement or answer a question…'}
-              aria-label="Message the requirements assistant"
+              placeholder={readOnly ? 'You have view-only access' : hasSpec ? 'Ask for a change — “add a due date to tasks”, “make it green”…' : 'Describe a requirement or answer a question…'}
+              aria-label={hasSpec ? 'Ask the builder for a change' : 'Message the requirements assistant'}
             />
             <div className="st-input-bar">
-              <label className="st-select" title="Model tier. Auto uses the project's preference.">
+              {hasSpec && <span className="st-fine st-input-hint">{busy ? 'A build is running — send your next change when it finishes' : 'Changes are verified before the preview updates'}</span>}
+              <label className="st-select" title="Model tier. Auto uses the project's preference." hidden={hasSpec}>
                 <select value={tier} onChange={(event) => setTier(event.target.value as Tier | '')} aria-label="Model tier">
                   {TIERS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </select>
               </label>
-              <button type="submit" className="lv-send" disabled={!input.trim() || send.isPending || readOnly} aria-label="Send">
+              <button type="submit" className="lv-send" disabled={!input.trim() || send.isPending || edit.isPending || readOnly || (hasSpec && busy)} aria-label="Send">
                 <ArrowUp size={17} strokeWidth={2.5} />
               </button>
             </div>
           </form>
         </div>
       )}
-      {leftTab === 'progress' && <Progress executions={executions.data ?? []} loading={executions.isLoading} />}
+      {leftTab === 'progress' && (
+        <Progress runs={runs.data ?? []} executions={executions.data ?? []} loading={executions.isLoading || runs.isLoading} onCancel={readOnly ? undefined : cancelRun} />
+      )}
       {leftTab === 'requirements' && (
-        <div className="st-scroll">
-          {latestRequirements ? (
+        hasSpec || !latestRequirements ? (
+          <SpecView spec={state.data?.spec ?? null} prompt={p.prompt} />
+        ) : (
+          <div className="st-scroll">
             <article className="st-doc">
               <p className="st-kicker">Latest draft from the requirements assistant</p>
               <div className="st-pre">{latestRequirements.content}</div>
-              <p className="st-fine">Structured requirements, acceptance criteria, and approval arrive with the generation pipeline in Milestone 2.</p>
+              <p className="st-fine">Generate the app when you're happy with this. The architect turns the conversation into a specification you can keep editing.</p>
             </article>
-          ) : (
-            <Empty icon={<ListChecks size={18} />} title="No requirements yet" text="Send a message in Chat and the assistant’s draft will appear here." />
-          )}
-        </div>
+          </div>
+        )
       )}
-      {leftTab === 'changes' && (
-        <Empty icon={<FileCode2 size={18} />} title="No file changes" text="Omniweb hasn’t generated code for this project. File diffs and Git checkpoints will appear here once code generation is enabled." />
-      )}
+      {leftTab === 'changes' && <HistoryPanel projectId={projectId} headSha={headSha} busy={busy} readOnly={readOnly} />}
       {leftTab === 'usage' && <ProjectUsage projectId={projectId} />}
     </section>
   )
@@ -272,24 +332,30 @@ function Studio() {
           <button type="button" aria-pressed={device === 'tablet'} onClick={() => setDevice('tablet')} title="Tablet"><Tablet size={15} /></button>
           <button type="button" aria-pressed={device === 'mobile'} onClick={() => setDevice('mobile')} title="Mobile"><Smartphone size={15} /></button>
         </div>
-        <button type="button" className="bd-icon" disabled title="Select a component to edit (available once there is a preview)"><MousePointerClick size={15} /></button>
-        <span className="bd-muted">No build yet</span>
+        <PreviewToolbarActions state={state.data} selecting={selecting} onSelectingChange={setSelecting} onReload={() => setPreviewKey((k) => k + 1)} />
         <div className="bd-toolbar-right">
+          {!readOnly && state.data?.spec && !busy && (
+            <button type="button" className="bd-icon" onClick={() => generate.mutate()} disabled={generate.isPending} title="Rebuild from the specification and run every check"><Hammer size={15} /></button>
+          )}
           <button type="button" className="bd-icon" onClick={() => setFullscreen(fullscreen === 'preview' ? 'none' : 'preview')} title={fullscreen === 'preview' ? 'Exit full screen' : 'Full-screen preview'}>
             {fullscreen === 'preview' ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
           </button>
         </div>
       </div>
-      <div className="bd-canvas">
-        <div className={`bd-frame bd-frame-${device} st-preview-empty`}>
-          <div>
-            <Waypoints size={22} />
-            <h3>No preview yet</h3>
-            <p>Omniweb is gathering requirements. A live preview appears here after the first build, which runs in an isolated sandbox.</p>
-            <span className="st-pill">Code generation: Milestone 2</span>
-          </div>
-        </div>
-      </div>
+      {state.data && state.data.approvals.length > 0 && (
+        <ApprovalBanner projectId={projectId} approvals={state.data.approvals} projectName={p.name} readOnly={readOnly} />
+      )}
+      <PreviewFrame
+        key={previewKey}
+        projectId={projectId}
+        state={state.data}
+        device={device}
+        selecting={selecting}
+        onSelectingChange={setSelecting}
+        readOnly={readOnly}
+        onGenerate={() => generate.mutate()}
+        onOpenFile={openFile}
+      />
     </section>
   )
 
@@ -314,19 +380,22 @@ function Studio() {
           {fullscreen === 'code' ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
         </button>
       </div>
-      {rightTab === 'files' && <Empty icon={<FileCode2 size={18} />} title="No source files yet" text="Generated source appears here with a code editor. Everything Omniweb writes stays exportable." />}
-      {rightTab === 'database' && <Empty icon={<Database size={18} />} title="No database schema yet" text="Tables, relationships, and migrations appear here once the database agent designs the schema." />}
-      {rightTab === 'api' && <Empty icon={<Waypoints size={18} />} title="No API routes yet" text="Routes from the generated backend’s OpenAPI document will be listed here." />}
+      {rightTab === 'files' && <CodePanel projectId={projectId} headSha={headSha} readOnly={readOnly} busy={busy} openPath={openPath} onOpen={setOpenPath} />}
+      {rightTab === 'database' && <SchemaPanel projectId={projectId} headSha={headSha} />}
+      {rightTab === 'api' && <RoutesPanel projectId={projectId} headSha={headSha} />}
       {rightTab === 'env' && <EnvVars projectId={projectId} readOnly={readOnly} />}
-      {rightTab === 'deploy' && (
-        <div className="st-scroll">
-          <div className="st-kv"><span>Status</span><strong>{STATUS_LABEL[p.deployment_status] ?? p.deployment_status}</strong></div>
-          <div className="st-kv"><span>GitHub</span><strong>{p.github_repo ?? 'Not connected'}</strong></div>
-          <p className="st-fine">Deployments to DigitalOcean always show estimated charges and require your explicit approval before any billable resource is created.</p>
-          <button type="button" className="lv-btn lv-btn-ghost st-wide" disabled>Deploy (requires a successful build)</button>
-        </div>
+      {rightTab === 'deploy' && <DeployPanel projectId={projectId} projectName={p.name} state={state.data} readOnly={readOnly} />}
+      {rightTab === 'logs' && (
+        <>
+          <BuildLogs projectId={projectId} state={state.data} />
+          {executions.data && executions.data.length > 0 && (
+            <details className="lg-agents">
+              <summary>Requirements assistant log</summary>
+              <Logs executions={executions.data} />
+            </details>
+          )}
+        </>
       )}
-      {rightTab === 'logs' && <Logs executions={executions.data ?? []} />}
     </section>
   )
 
@@ -340,7 +409,10 @@ function Studio() {
             <strong>{p.name}</strong>
             <small>{p.template_label} · edited {relativeTime(p.updated_at)}</small>
           </div>
-          <span className={`st-status st-status-${p.generation_status}`}>{STATUS_LABEL[p.generation_status]}</span>
+          {(() => {
+            const status = state.data?.generation_status ?? p.generation_status
+            return <span className={`st-status st-status-${status}`}>{STATUS_LABEL[status] ?? status}</span>
+          })()}
         </div>
         <div className="bd-switch bd-mobile-only" role="tablist">
           <button type="button" role="tab" aria-selected={mobilePane === 'left'} onClick={() => setMobilePane('left')}>Chat</button>
@@ -417,11 +489,21 @@ const STATUS_ICON = {
   cancelled: <Square size={11} />,
 }
 
-function Progress({ executions, loading }: { executions: Execution[]; loading: boolean }) {
+function Progress({ runs, executions, loading, onCancel }: { runs: Run[]; executions: Execution[]; loading: boolean; onCancel?: (run: Run) => void }) {
   if (loading) return <div className="st-scroll"><span className="st-spinner" /></div>
-  if (executions.length === 0) return <Empty icon={<ListChecks size={18} />} title="No agent runs yet" text="Each assistant step, its model, attempts, and cost will be listed here." />
+  if (executions.length === 0 && runs.length === 0) return <Empty icon={<ListChecks size={18} />} title="No agent runs yet" text="Each build, its pipeline steps and checks, plus every assistant step with its model and cost, is listed here." />
   return (
     <div className="st-scroll st-list">
+      {runs.map((run, index) => (
+        <div key={run.id} className="st-progress-run">
+          <RunCard run={run} compact={index > 0} onCancel={onCancel ? () => onCancel(run) : undefined} />
+          <small className="st-fine">
+            {run.instruction ? `“${run.instruction}” · ` : ''}{relativeTime(run.created_at)} · {usd(run.cost_usd)}
+            {run.repair_attempts > 0 ? ` · ${run.repair_attempts} repair attempt${run.repair_attempts > 1 ? 's' : ''}` : ''}
+          </small>
+        </div>
+      ))}
+      {runs.length > 0 && executions.length > 0 && <h4 className="st-h4">Requirements assistant</h4>}
       {executions.map((run) => (
         <div key={run.id} className={`st-run st-run-${run.status}`}>
           <span className="st-run-icon">{STATUS_ICON[run.status]}</span>

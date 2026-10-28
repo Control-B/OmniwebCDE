@@ -66,12 +66,13 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly conflicts: string[] = [],
   ) {
     super(message)
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = await accessToken()
   let response: Response
   try {
@@ -89,13 +90,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Request failed' }))
     const detail = typeof error.detail === 'string' ? error.detail : (error.detail?.message ?? 'Request failed')
-    throw new ApiError(response.status === 401 ? `401: ${detail}` : detail, response.status)
+    const conflicts = Array.isArray(error.detail?.conflicts) ? (error.detail.conflicts as string[]) : []
+    throw new ApiError(response.status === 401 ? `401: ${detail}` : detail, response.status, conflicts)
   }
   if (response.status === 204) return undefined as T
   return response.json()
 }
 
-export type GenerationStatus = 'draft' | 'planning' | 'generating' | 'ready' | 'failed'
+export type GenerationStatus = 'draft' | 'planning' | 'building' | 'ready' | 'needs_attention' | 'failed'
 export type Tier = 'economy' | 'standard' | 'advanced' | 'self_hosted'
 
 export interface Project {
@@ -110,6 +112,8 @@ export interface Project {
   deployment_status: string
   github_repo: string | null
   app_config: Record<string, unknown>
+  has_code: boolean
+  head_sha: string | null
   estimated_usage_usd: number
   message_count: number
   your_role: 'owner' | 'editor' | 'viewer'

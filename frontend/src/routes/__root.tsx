@@ -5,6 +5,7 @@ import appCss from '../styles.css?url'
 import omniwebCss from '../omniweb.css?url'
 import builderCss from '../builder.css?url'
 import studioCss from '../studio.css?url'
+import workbenchCss from '../workbench.css?url'
 import { platform } from '../lib/api'
 import { AuthProvider } from '../lib/auth'
 
@@ -43,6 +44,10 @@ export const Route = createRootRoute({
       {
         rel: 'stylesheet',
         href: studioCss,
+      },
+      {
+        rel: 'stylesheet',
+        href: workbenchCss,
       },
     ],
   }),
