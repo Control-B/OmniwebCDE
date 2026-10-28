@@ -35,6 +35,9 @@ def test_heuristic_spec_and_edits():
     assert apply_instruction(spec, "make it green").spec.accent == "#16a34a"
     assert "mobile" in apply_instruction(spec, "add a mobile app").spec.targets
     assert apply_instruction(spec, "do something magical") is None
+    notes: list[str] = []
+    assert apply_instruction(spec, "tools should have a condition", notes) is None
+    assert notes == ["Tools already have a Condition field."]
 
 
 def test_migrations_are_append_only_and_flag_destructive_changes():

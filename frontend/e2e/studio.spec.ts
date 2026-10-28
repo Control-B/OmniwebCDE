@@ -2,23 +2,44 @@ import { expect, test } from '@playwright/test'
 
 test.describe.configure({ mode: 'serial' })
 
-test('creates an app project from the landing page and gets a requirements reply', async ({ page }) => {
+test('generates an app from the landing page, previews it, and applies a chat edit', async ({ page }) => {
+  test.setTimeout(180_000)
   await page.goto('/')
   const appTab = page.getByRole('tab', { name: 'Full-stack app' })
   await expect(async () => {
     await appTab.click()
     await expect(appTab).toHaveAttribute('aria-selected', 'true', { timeout: 500 })
   }).toPass()
-  const name = `Tool library ${Date.now()}`
-  await page.getByLabel('Describe the application you want to build').fill(`${name} where neighbours lend and borrow tools`)
+  await page.getByLabel('Describe the application you want to build').fill(`A tool library ${Date.now()} where neighbours lend and borrow tools`)
   await page.getByRole('button', { name: 'Create application' }).click()
-
   await expect(page).toHaveURL(/\/projects\/[0-9a-f-]+/)
-  await expect(page.locator('.bd-msg-user').first()).toContainText('lend and borrow tools')
-  await expect(page.locator('.bd-msg-assistant .st-msg-meta').first()).toBeVisible({ timeout: 30_000 })
 
-  await page.getByRole('tab', { name: 'Progress' }).click()
-  await expect(page.locator('.st-run').first()).toContainText('Requirements agent')
+  await expect(page.locator('.rc').first()).toBeVisible({ timeout: 15_000 })
+  const preview = page.locator('iframe[title="App preview"]')
+  await expect(preview).toBeVisible({ timeout: 120_000 })
+  await expect(preview.contentFrame().locator('h1').first()).toBeVisible({ timeout: 15_000 })
+  await expect(page.locator('.st-status')).toContainText(/ready/i)
+
+  await page.getByRole('tab', { name: 'Logs' }).click()
+  await expect(page.locator('.lg-step[data-ok="true"]').first()).toBeVisible()
+  await expect(page.locator('.lg-step[data-ok="false"]')).toHaveCount(0)
+
+  await page.getByRole('tab', { name: 'Files' }).click()
+  await expect(page.locator('.cp-file').first()).toBeVisible()
+  await expect(page.locator('.monaco-editor').first()).toBeVisible({ timeout: 20_000 })
+
+  await page.getByRole('tab', { name: 'Database' }).click()
+  await expect(page.locator('.mg-list li').first()).toBeVisible()
+
+  await page.getByLabel('Ask the builder for a change').fill('Tools should have a brand')
+  await page.getByLabel('Ask the builder for a change').press('Enter')
+  await expect(page.locator('.bd-msg-user', { hasText: 'brand' })).toBeVisible()
+  await expect(page.locator('.bd-msg-assistant', { hasText: 'Added Brand to Tools' })).toBeVisible({ timeout: 120_000 })
+  await expect(page.locator('.st-status')).toContainText(/ready/i, { timeout: 30_000 })
+
+  await page.getByRole('tab', { name: 'Changes' }).click()
+  await expect(page.locator('.hp-list > li')).toHaveCount(2)
+  await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled()
 })
 
 test('builder panels collapse, expand and go full screen', async ({ page }) => {

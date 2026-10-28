@@ -126,7 +126,7 @@ function Landing() {
     setError('')
     if (mode === 'app') {
       platform
-        .createProject(text)
+        .createProject(text, 'full-stack')
         .then((project) => navigate({ to: '/projects/$projectId', params: { projectId: project.id }, search: { start: true } }))
         .catch((reason: Error) => {
           setError(reason.message)

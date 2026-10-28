@@ -449,6 +449,14 @@ function Studio() {
   )
 }
 
+function inlineMarkdown(text: string) {
+  return text.split(/(\*\*[^*\n]+\*\*|(?<![\w])_[^_\n]+_(?![\w]))/g).map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**') && part.length > 4) return <strong key={i}>{part.slice(2, -2)}</strong>
+    if (part.startsWith('_') && part.endsWith('_') && part.length > 2) return <em key={i}>{part.slice(1, -1)}</em>
+    return part
+  })
+}
+
 function Bubble({ message }: { message: ChatMessage }) {
   if (message.role === 'user') {
     return <div className="bd-msg bd-msg-user"><div className="bd-bubble"><p>{message.content}</p></div></div>
@@ -457,7 +465,7 @@ function Bubble({ message }: { message: ChatMessage }) {
     <div className="bd-msg bd-msg-assistant">
       <span className="bd-avatar"><Sparkles size={13} /></span>
       <div className="bd-bubble">
-        <div className="st-pre">{message.content}</div>
+        <div className="st-pre">{inlineMarkdown(message.content)}</div>
         <div className="st-msg-meta">
           {message.development_model ? (
             <span className="st-pill st-pill-warn" title="No AI provider is configured. Add a key in Usage → Providers.">Development model · no AI</span>

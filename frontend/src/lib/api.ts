@@ -219,7 +219,7 @@ const json = (method: string, body: unknown): RequestInit => ({ method, body: JS
 export const platform = {
   me: () => request<Me>('/me'),
   projects: () => request<Project[]>('/projects'),
-  createProject: (prompt: string) => request<Project>('/projects', json('POST', { prompt })),
+  createProject: (prompt: string, template?: string) => request<Project>('/projects', json('POST', { prompt, template })),
   project: (id: string) => request<Project>(`/projects/${id}`),
   updateProject: (id: string, input: Partial<Pick<Project, 'name' | 'description' | 'template' | 'app_config'>>) =>
     request<Project>(`/projects/${id}`, json('PATCH', input)),

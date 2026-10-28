@@ -106,10 +106,13 @@ def _clauses(instruction: str) -> list[str]:
     return [p.strip(" ,") for p in parts if p.strip(" ,")]
 
 
-def apply_instruction(spec: AppSpec, instruction: str) -> EditResult | None:
-    """Returns the edited spec and a description of each change, or None when nothing was understood."""
+def apply_instruction(spec: AppSpec, instruction: str, notes: list[str] | None = None) -> EditResult | None:
+    """Returns the edited spec and a description of each change, or None when nothing changed.
+
+    Requests that were understood but are already satisfied are described in `notes`, when given."""
     data = spec.model_copy(deep=True)
     changes: list[str] = []
+    notes = notes if notes is not None else []
     for clause in _clauses(instruction):
         text = clause.strip()
         low = text.lower()
@@ -202,24 +205,28 @@ def apply_instruction(spec: AppSpec, instruction: str) -> EditResult | None:
                     if not phrase.strip():
                         continue
                     new = _new_field(phrase, required=m.group(1) == "required")
-                    if new and not _field(entity, new.name) and len(entity.fields) < 20:
+                    if new and (existing := _field(entity, new.name)):
+                        notes.append(f"{entity.label} already have a {existing.label} field.")
+                    elif new and len(entity.fields) < 20:
                         entity.fields.append(new)
                         added.append(new.label)
                 if added:
                     changes.append(f"Added {', '.join(added)} to {entity.label}")
-                    continue
+                continue
         if m := re.search(rf"\b(\w+?)s?\s+(?:should|need to|needs to|must)\s+(?:have|include|show|store)\s+{ARTICLES}(.+)$", low):
             entity = _entity(data, m.group(1))
             if entity:
                 added = []
                 for phrase in re.split(r",|\band\b", m.group(2)):
                     new = _new_field(phrase) if phrase.strip() else None
-                    if new and not _field(entity, new.name):
+                    if new and (existing := _field(entity, new.name)):
+                        notes.append(f"{entity.label} already have a {existing.label} field.")
+                    elif new:
                         entity.fields.append(new)
                         added.append(new.label)
                 if added:
                     changes.append(f"Added {', '.join(added)} to {entity.label}")
-                    continue
+                continue
         if m := re.search(rf"\b(?:add|create|track|manage|include|support)\s+{ARTICLES}(.+?)(?:\s+{ENTITY_WORDS})?$", low):
             added = []
             for phrase in re.split(r",|\band\b", m.group(1)):

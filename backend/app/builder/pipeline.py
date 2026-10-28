@@ -232,7 +232,10 @@ async def understand(state: BuildState) -> BuildState:
         if parsed:
             spec, changes, files = parsed
             return {"spec": spec.model_dump(), "changes": changes, "files": files, "used_model": True, "detail": "; ".join(changes)[:500]}
-    edited = edits.apply_instruction(current, instruction)
+    notes: list[str] = []
+    edited = edits.apply_instruction(current, instruction, notes)
+    if not edited and notes:
+        raise NoChange(" ".join(dict.fromkeys(notes)) + " Nothing needed to change.")
     if not edited:
         raise NoChange(
             "I couldn't turn that into a change without an AI provider. Try something like “add a due date field to tasks”, "
