@@ -31,7 +31,20 @@ type Device = 'desktop' | 'tablet' | 'mobile'
 
 const GENERATION_STEPS = ['Understanding your idea', 'Choosing layout and sections', 'Pairing typography and color', 'Writing copy', 'Polishing responsive details']
 
-const EDIT_IDEAS = ['Make it dark', 'Add a pricing section', 'Use a green palette', 'Make the style more elegant', 'Add testimonials', 'Make the corners sharp']
+const EDIT_IDEAS = [
+  'Make it dark',
+  'Make it light',
+  'Add a pricing section',
+  'Add an FAQ',
+  'Add testimonials',
+  'Add stats',
+  'Use a green palette',
+  'Use a blue palette',
+  'Make the style more elegant',
+  'Make it playful',
+  'Make the corners sharp',
+  'Make the corners round',
+]
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -73,7 +86,7 @@ function Builder() {
       const spec = project.versions[0]
       const reply = newMessage(
         'assistant',
-        `I designed ${spec.name}, a ${kindLabel(spec.kind).toLowerCase()} with a ${spec.style} feel. Tell me what to change and I’ll update it live.`,
+        `I designed ${spec.name}, a ${kindLabel(spec.kind).replace(/^[A-Z][a-z]/, (word) => word.toLowerCase())} with ${/^[aeiou]/.test(spec.style) ? 'an' : 'a'} ${spec.style} feel. Tell me what to change and I’ll update it live.`,
         describeSpec(spec),
       )
       commit({ ...project, generated: true, messages: [...project.messages, reply] })
@@ -89,6 +102,7 @@ function Builder() {
 
   const spec = project?.versions[Math.min(cursor, (project?.versions.length ?? 1) - 1)]
   const html = useMemo(() => (spec && project?.generated ? renderSite(spec) : ''), [spec, project?.generated])
+  const ideas = useMemo(() => (spec ? EDIT_IDEAS.filter((idea) => applyEdit(spec, idea).changes.length > 0).slice(0, 5) : []), [spec])
 
   const send = async (value: string) => {
     const text = value.trim()
@@ -100,16 +114,14 @@ function Builder() {
     await wait(650 + Math.random() * 400)
     const result = applyEdit(spec, text)
     if (result.changes.length === 0) {
-      commit({
-        ...withUser,
-        messages: [
-          ...withUser.messages,
-          newMessage(
-            'assistant',
-            'I couldn’t map that to a design change yet. Try asking for a color, dark or light mode, a style, a section to add or remove, or new copy in quotes, like: headline "Ship faster together".',
-          ),
-        ],
-      })
+      const reply =
+        result.notes.length > 0
+          ? newMessage('assistant', `Nothing to change there. ${result.notes.join('. ')}.`)
+          : newMessage(
+              'assistant',
+              'I couldn’t map that to a design change yet. Try asking for a color, dark or light mode, a style, a section to add or remove, or new copy in quotes, like: headline "Ship faster together".',
+            )
+      commit({ ...withUser, messages: [...withUser.messages, reply] })
     } else {
       const versions = [...project.versions.slice(0, cursor + 1), result.spec]
       commit({
@@ -230,9 +242,9 @@ function Builder() {
           <div ref={chatEnd} />
         </div>
 
-        {project.generated && (
+        {project.generated && ideas.length > 0 && (
           <div className="bd-ideas">
-            {EDIT_IDEAS.map((idea) => (
+            {ideas.map((idea) => (
               <button key={idea} type="button" onClick={() => void send(idea)} disabled={busy}>{idea}</button>
             ))}
           </div>

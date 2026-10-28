@@ -88,7 +88,7 @@ function SitePreview({ html, title }: { html: string; title: string }) {
   }, [])
   return (
     <div ref={ref} className="lv-thumb" aria-hidden>
-      <iframe title={title} srcDoc={html} sandbox="" loading="lazy" tabIndex={-1} style={{ transform: `scale(${scale})` }} />
+      <iframe title={title} srcDoc={html.replace(/ onsubmit="[^"]*"/g, '')} sandbox="" loading="lazy" tabIndex={-1} style={{ transform: `scale(${scale})` }} />
     </div>
   )
 }

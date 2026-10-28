@@ -40,7 +40,8 @@ npm install
 npm run dev
 ```
 
-Open <http://localhost:43210>. The frontend uses representative local data if the API is
+Open <http://localhost:43210> for the builder, or <http://localhost:43210/app> for cloud
+workspaces. The frontend uses representative local data if the API is
 not running, so the full dashboard and console can be evaluated immediately.
 
 ### API

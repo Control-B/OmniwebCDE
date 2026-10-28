@@ -394,6 +394,10 @@ export const SECTION_LABELS: Record<SectionId, string> = {
   cta: 'Call to action',
 }
 
+function sectionName(section: SectionId): string {
+  return section === 'faq' ? 'FAQ' : SECTION_LABELS[section].toLowerCase()
+}
+
 function pick<T>(entries: [T, RegExp][], text: string): T | undefined {
   return entries.find(([, pattern]) => pattern.test(text))?.[0]
 }
@@ -449,11 +453,13 @@ export function createSpec(prompt: string): SiteSpec {
 export interface EditResult {
   spec: SiteSpec
   changes: string[]
+  notes: string[]
 }
 
 export function applyEdit(spec: SiteSpec, instruction: string): EditResult {
   const next: SiteSpec = { ...spec, sections: [...spec.sections] }
   const changes: string[] = []
+  const notes: string[] = []
   const text = instruction.trim()
 
   const rename = text.match(/(?:rename(?: it)?(?: to)?|call it|name it|brand name(?: to)?)\s+["“']?([^"”'.!]{2,40})/i)
@@ -485,10 +491,12 @@ export function applyEdit(spec: SiteSpec, instruction: string): EditResult {
     if (!pattern.test(text) || headline || subheadline) continue
     if (isRemoval && next.sections.includes(section)) {
       next.sections = next.sections.filter((item) => item !== section)
-      changes.push(`Removed the ${SECTION_LABELS[section].toLowerCase()} section`)
+      changes.push(`Removed the ${sectionName(section)} section`)
     } else if (!isRemoval && !next.sections.includes(section)) {
       next.sections = sortSections([...next.sections, section])
-      changes.push(`Added a ${SECTION_LABELS[section].toLowerCase()} section`)
+      changes.push(`Added ${section === 'faq' ? 'an' : 'a'} ${sectionName(section)} section`)
+    } else {
+      notes.push(`The site ${isRemoval ? 'doesn’t have' : 'already has'} ${section === 'faq' ? 'an' : 'a'} ${sectionName(section)} section`)
     }
   }
 
@@ -496,20 +504,28 @@ export function applyEdit(spec: SiteSpec, instruction: string): EditResult {
   if (color && color !== next.palette) {
     next.palette = color
     changes.push(`Switched the palette to ${color}`)
+  } else if (color) {
+    notes.push(`The palette is already ${color}`)
   }
 
-  if (/\bdark\b|night mode/i.test(text) && !next.dark) {
+  const wantsDark = /\bdark\b|night mode/i.test(text)
+  const wantsLight = /\blight\b|bright|white background/i.test(text)
+  if (wantsDark && !next.dark) {
     next.dark = true
     changes.push('Moved to a dark theme')
-  } else if (/\blight\b|bright|white background/i.test(text) && next.dark) {
+  } else if (wantsLight && next.dark) {
     next.dark = false
     changes.push('Moved to a light theme')
+  } else if (wantsDark || wantsLight) {
+    notes.push(`The site is already using a ${next.dark ? 'dark' : 'light'} theme`)
   }
 
   const style = pick(STYLE_KEYWORDS, text)
   if (style && style !== next.style) {
     next.style = style
     changes.push(`Restyled the typography to feel ${style}`)
+  } else if (style) {
+    notes.push(`The typography already feels ${style}`)
   }
 
   if (/sharp|square/i.test(text) && next.radius !== 4) {
@@ -531,7 +547,7 @@ export function applyEdit(spec: SiteSpec, instruction: string): EditResult {
     changes.push(`Rebuilt the site as a ${content.label.toLowerCase()}`)
   }
 
-  return { spec: next, changes }
+  return { spec: next, changes, notes }
 }
 
 function esc(value: string): string {
@@ -608,7 +624,7 @@ h1{font-size:clamp(42px,6vw,72px);margin:22px 0}.lead{font-size:19px;color:var(-
 .mock-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.mock-cards div{border:1px solid var(--line);border-radius:var(--r);padding:12px}.mock-cards small{display:block;color:var(--muted);font-size:11px}.mock-cards strong{font-size:22px}
 .mock-chart{height:150px;margin-top:16px;display:flex;align-items:flex-end;gap:10px;padding:14px;border:1px solid var(--line);border-radius:var(--r)}.mock-chart span{flex:1;border-radius:6px 6px 2px 2px;background:linear-gradient(180deg,var(--a),var(--p))}
 .art{position:relative;aspect-ratio:1/1.02}.art-main{position:absolute;inset:0 8% 6% 0;border-radius:calc(var(--r) * 2);background:radial-gradient(circle at 30% 25%,color-mix(in srgb,var(--a) 70%,#fff),transparent 55%),linear-gradient(150deg,var(--p),color-mix(in srgb,var(--p) 50%,#000));display:flex;flex-direction:column;justify-content:flex-end;padding:30px;color:#fff;box-shadow:0 40px 80px -30px rgba(0,0,0,.4)}.art-main span{font-size:12px;opacity:.8;text-transform:uppercase;letter-spacing:.14em}.art-main strong{font:600 30px ${font.heading}}
-.art-float{position:absolute;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px 18px;box-shadow:0 20px 40px -20px rgba(0,0,0,.3)}.art-float small{display:block;color:var(--muted);font-size:12px}.art-float strong{font-size:22px}.art-float.one{right:0;top:12%}.art-float.two{left:-4%;bottom:0}
+.art-float{position:absolute;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px 18px;box-shadow:0 20px 40px -20px rgba(0,0,0,.3)}.art-float small{display:block;color:var(--muted);font-size:12px}.art-float strong{font-size:22px}.art-float.one{right:0;top:12%}.art-float.two{left:-5%;top:38%}
 .logos{border-block:1px solid var(--line);padding:26px 0}.logos .wrap{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;color:var(--muted);font:600 15px ${font.heading};opacity:.7}
 .section{padding:96px 0}.section.alt{background:var(--alt)}.kicker{color:var(--p);font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.14em;margin:0 0 12px}h2{font-size:clamp(32px,4vw,48px);max-width:720px;margin-bottom:48px}
 .grid{display:grid;gap:20px}.three{grid-template-columns:repeat(3,1fr)}.four{grid-template-columns:repeat(4,1fr)}
@@ -622,7 +638,7 @@ details{border-bottom:1px solid var(--line);padding:22px 0}summary{cursor:pointe
 .split{display:grid;grid-template-columns:1fr 1fr;gap:56px;align-items:start}.form{display:grid;gap:16px}.form label{display:grid;gap:6px;font-size:14px;font-weight:600}.form input,.form textarea{font:inherit;padding:12px 14px;border:1px solid var(--line);border-radius:calc(var(--r) * .7);background:var(--bg);color:var(--fg);outline:none}.form input:focus,.form textarea:focus{border-color:var(--p);box-shadow:0 0 0 4px color-mix(in srgb,var(--p) 16%,transparent)}
 .cta{border-radius:calc(var(--r) * 2);padding:72px 40px;text-align:center;color:#fff;background:radial-gradient(circle at 20% 0,color-mix(in srgb,var(--a) 75%,transparent),transparent 50%),linear-gradient(135deg,var(--p),color-mix(in srgb,var(--p) 50%,#000))}.cta h2{margin:0 auto 14px}.cta p{opacity:.85;max-width:520px;margin:0 auto 30px;font-size:18px}
 footer{border-top:1px solid var(--line);padding:40px 0;color:var(--muted);font-size:14px}footer .wrap{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap}
-@media (max-width:860px){nav ul{display:none}.hero{padding:64px 0}.hero .wrap,.split{grid-template-columns:1fr}.three{grid-template-columns:1fr}.four{grid-template-columns:1fr 1fr}.section{padding:72px 0}.art{max-width:440px}}
+@media (max-width:860px){nav ul{display:none}nav .wrap{justify-content:space-between}.hero{padding:64px 0}.hero .wrap,.split{grid-template-columns:1fr}.three{grid-template-columns:1fr}.four{grid-template-columns:1fr 1fr}.section{padding:72px 0}.art{max-width:440px}}
 </style>
 </head>
 <body>
