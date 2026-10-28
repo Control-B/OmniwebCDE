@@ -28,8 +28,12 @@ dev = [
 ]
 postgres = ["asyncpg>=0.30.0"]
 
+[tool.setuptools.packages.find]
+include = ["app*"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 
 [tool.ruff]
@@ -38,4 +42,4 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "S"]
-ignore = ["S101"]
+ignore = ["B008", "E501", "S101"]

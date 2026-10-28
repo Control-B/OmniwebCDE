@@ -9,19 +9,20 @@ from app.security import get_principal
 
 def test_workspace_creation_is_idempotent() -> None:
     with TestClient(app) as client:
+        suffix = uuid.uuid4().hex[:8]
         connection = client.post(
             "/api/v1/cloud-connections",
             json={"label": "Engineering", "token": "dop_v1_mock_token"},
         )
         assert connection.status_code == 201
         payload = {
-            "name": "payments-api",
+            "name": f"payments-{suffix}",
             "cloud_connection_id": connection.json()["id"],
             "region": "nyc3",
             "size": "s-2vcpu-4gb",
             "image": "ubuntu-24-04-x64",
             "template": "full-stack",
-            "idempotency_key": "create-payments-api-001",
+            "idempotency_key": f"create-payments-{suffix}",
             "approved_estimated_monthly_usd": "24.00",
         }
         first = client.post("/api/v1/workspaces", json=payload)

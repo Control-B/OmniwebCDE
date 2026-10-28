@@ -14,7 +14,6 @@ import {
   ExternalLink,
   Gauge,
   GitBranch,
-  Globe2,
   LayoutDashboard,
   MoreHorizontal,
   Play,
@@ -28,7 +27,7 @@ import {
   Users,
   X,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api, demoData, type Workspace } from '../lib/api'
 
 export const Route = createFileRoute('/')({ component: App })

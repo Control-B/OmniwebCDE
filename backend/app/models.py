@@ -1,6 +1,6 @@
-import enum
 import uuid
 from datetime import UTC, datetime
+from enum import StrEnum
 
 from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -14,7 +14,7 @@ class Base(DeclarativeBase):
     pass
 
 
-class WorkspaceState(str, enum.Enum):
+class WorkspaceState(StrEnum):
     REQUESTED = "REQUESTED"
     VALIDATING = "VALIDATING"
     PROVISIONING = "PROVISIONING"
@@ -64,7 +64,7 @@ class CloudConnection(Base):
     organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
     provider: Mapped[str] = mapped_column(String(32), default="digitalocean")
     label: Mapped[str] = mapped_column(String(100))
-    encrypted_token: Mapped[str] = mapped_column(Text, repr=False)
+    encrypted_token: Mapped[str] = mapped_column(Text)
     token_fingerprint: Mapped[str] = mapped_column(String(16))
     provider_account_id: Mapped[str | None] = mapped_column(String(100))
     healthy: Mapped[bool] = mapped_column(Boolean, default=False)
