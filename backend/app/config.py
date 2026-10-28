@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     encryption_key: str = ""
     digitalocean_base_url: str = "https://api.digitalocean.com/v2"
     coder_base_url: str = "http://coder:7080"
+    coder_access_url: str = "http://coder.localhost"
     coder_token: str = Field(default="", repr=False)
     mock_infrastructure: bool = True
 

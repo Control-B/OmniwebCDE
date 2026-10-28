@@ -45,7 +45,21 @@ class DigitalOceanAdapter:
             return "mock-account"
         response = await self.client.get("/account")
         self._raise(response)
-        return str(response.json()["account"]["uuid"])
+        account = response.json()["account"]
+        if account.get("status") != "active":
+            raise DigitalOceanError(
+                "account_inactive",
+                str(account.get("status_message") or "DigitalOcean account is not active"),
+            )
+        if account.get("email_verified") is False:
+            raise DigitalOceanError(
+                "email_unverified", "DigitalOcean account email must be verified"
+            )
+        if int(account.get("droplet_limit", 0)) < 1:
+            raise DigitalOceanError(
+                "droplet_quota_exhausted", "DigitalOcean Droplet quota is unavailable"
+            )
+        return str(account["uuid"])
 
     async def regions(self) -> list[Region]:
         if self.settings.mock_infrastructure:
@@ -78,9 +92,9 @@ class DigitalOceanAdapter:
 
     async def create_droplet(
         self, *, name: str, region: str, size: str, image: str, user_data: str, tags: list[str]
-    ) -> str:
+    ) -> tuple[str, str | None]:
         if self.settings.mock_infrastructure:
-            return f"mock-{name}"
+            return f"mock-{name}", f"mock-action-{name}"
         response = await self.client.post(
             "/droplets",
             json={
@@ -95,7 +109,20 @@ class DigitalOceanAdapter:
             },
         )
         self._raise(response)
-        return str(response.json()["droplet"]["id"])
+        body = response.json()
+        actions = body.get("links", {}).get("actions", [])
+        action_id = str(actions[0]["id"]) if actions else None
+        return str(body["droplet"]["id"]), action_id
+
+    async def action(self, action_id: str) -> dict[str, Any]:
+        response = await self.client.get(f"/actions/{action_id}")
+        self._raise(response)
+        return dict(response.json()["action"])
+
+    async def droplets_by_tag(self, tag: str) -> list[dict[str, Any]]:
+        response = await self.client.get("/droplets", params={"tag_name": tag, "per_page": 200})
+        self._raise(response)
+        return list(response.json()["droplets"])
 
     async def delete_droplet(self, resource_id: str) -> None:
         if self.settings.mock_infrastructure:

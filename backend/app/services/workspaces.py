@@ -158,14 +158,20 @@ async def create_workspace(
         # Production uses a Temporal activity to mint a short-lived Coder agent token.
         # No provider or Omniweb credential is included in cloud-init.
         cloud_init = "#cloud-config\nusers:\n  - name: developer\n    shell: /bin/bash\n"
-        workspace.external_resource_id = await provider.create_droplet(
+        resource_id, operation_id = await provider.create_droplet(
             name=f"omniweb-{workspace.id.hex[:10]}",
             region=data.region,
             size=data.size,
             image=data.image,
             user_data=cloud_init,
-            tags=["omniweb", f"org-{principal.organization_id}"],
+            tags=[
+                "omniweb",
+                f"org-{principal.organization_id}",
+                f"workspace-{workspace.id}",
+            ],
         )
+        workspace.external_resource_id = resource_id
+        workspace.provider_operation_id = operation_id
         await transition(db, workspace, WorkspaceState.BOOTSTRAPPING, "Droplet created")
         await transition(db, workspace, WorkspaceState.CONNECTING, "Agent registration pending")
         if settings.mock_infrastructure:

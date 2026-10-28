@@ -89,6 +89,7 @@ class Workspace(Base):
     )
     idempotency_key: Mapped[str] = mapped_column(String(100))
     external_resource_id: Mapped[str | None] = mapped_column(String(100))
+    provider_operation_id: Mapped[str | None] = mapped_column(String(100))
     coder_workspace_id: Mapped[str | None] = mapped_column(String(100))
     estimated_monthly_usd: Mapped[float] = mapped_column(Numeric(10, 2))
     error_code: Mapped[str | None] = mapped_column(String(80))

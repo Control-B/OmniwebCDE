@@ -1,4 +1,5 @@
 from typing import Any, Literal
+from urllib.parse import quote
 
 import httpx
 
@@ -22,6 +23,7 @@ class CoderAdapter:
     def __init__(self, settings: Settings):
         if not settings.coder_token:
             raise CoderError(503, "Coder service account is not configured")
+        self.access_url = settings.coder_access_url.rstrip("/")
         self.client = httpx.AsyncClient(
             base_url=settings.coder_base_url.rstrip("/"),
             headers={
@@ -104,7 +106,15 @@ class CoderAdapter:
             for agent in resource.get("agents", []):
                 for app in agent.get("apps", []):
                     if app.get("slug") == slug and app.get("sharing_level") == "owner":
-                        return {"slug": slug, "url": str(app["url"])}
+                        owner = quote(str(workspace["owner_name"]), safe="")
+                        workspace_name = quote(str(workspace["name"]), safe="")
+                        app_slug = quote(slug, safe="")
+                        return {
+                            "slug": slug,
+                            "url": (
+                                f"{self.access_url}/@{owner}/{workspace_name}/apps/{app_slug}/"
+                            ),
+                        }
         raise CoderError(404, f"Owner-only app '{slug}' is not available")
 
     @staticmethod
