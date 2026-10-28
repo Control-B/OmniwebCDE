@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import Settings, get_settings
 from .database import get_db
-from .models import CloudConnection, Workspace, WorkspaceState
+from .models import AuditEvent, CloudConnection, Workspace, WorkspaceState
 from .providers.digitalocean import DigitalOceanAdapter
 from .schemas import (
     AccessLink,
@@ -83,6 +83,17 @@ async def connect_cloud(
         last_checked_at=datetime.now(UTC),
     )
     db.add(connection)
+    await db.flush()
+    db.add(
+        AuditEvent(
+            organization_id=principal.organization_id,
+            actor_id=principal.user_id,
+            action="cloud_connection.create",
+            target_type="cloud_connection",
+            target_id=str(connection.id),
+            outcome="success",
+        )
+    )
     await db.commit()
     await db.refresh(connection)
     return connection
@@ -218,6 +229,16 @@ async def lifecycle(
         await transition(db, workspace, WorkspaceState.DELETED, "Provider resource removed")
     else:
         raise HTTPException(status_code=404, detail="Unknown lifecycle action")
+    db.add(
+        AuditEvent(
+            organization_id=principal.organization_id,
+            actor_id=principal.user_id,
+            action=f"workspace.{action}",
+            target_type="workspace",
+            target_id=str(workspace.id),
+            outcome="success",
+        )
+    )
     await db.commit()
     await db.refresh(workspace)
     return workspace

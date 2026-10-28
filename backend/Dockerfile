@@ -7,8 +7,8 @@ RUN useradd --create-home --uid 10001 omniweb
 WORKDIR /app
 
 COPY pyproject.toml ./
-RUN pip install --no-cache-dir ".[postgres]"
 COPY app ./app
+RUN pip install --no-cache-dir ".[postgres]"
 
 USER omniweb
 EXPOSE 8010

@@ -53,7 +53,11 @@ export interface Size {
   available: boolean
 }
 
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8010'
+const API_URL =
+  import.meta.env.VITE_API_URL ??
+  (typeof window !== 'undefined' && window.location.port === '43210'
+    ? 'http://localhost:8010'
+    : '')
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}/api/v1${path}`, {

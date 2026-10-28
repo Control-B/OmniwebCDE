@@ -36,8 +36,12 @@ function WorkspaceConsole() {
     api.access(workspaceId, 'console')
       .then(({ url }) => {
         const token = new URL(url, window.location.origin).searchParams.get('access_token')
-        const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:8010'
-        socket = new WebSocket(`${apiUrl.replace(/^http/, 'ws')}/api/v1/terminal/${workspaceId}?access_token=${token}`)
+        const apiUrl =
+          import.meta.env.VITE_API_URL ??
+          (window.location.port === '43210' ? 'http://localhost:8010' : window.location.origin)
+        socket = new WebSocket(
+          `${apiUrl.replace(/^http/, 'ws')}/api/v1/terminal/${workspaceId}?access_token=${token}`,
+        )
         socket.onopen = () => setConnected(true)
         socket.onmessage = (event) => {
           const message = JSON.parse(event.data)

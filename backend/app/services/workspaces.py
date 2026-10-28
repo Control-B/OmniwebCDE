@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ..config import Settings
-from ..models import CloudConnection, Workspace, WorkspaceEvent, WorkspaceState
+from ..models import AuditEvent, CloudConnection, Workspace, WorkspaceEvent, WorkspaceState
 from ..providers.digitalocean import DigitalOceanAdapter
 from ..schemas import DashboardSummary, Principal, WorkspaceCreate
 from ..security import decrypt_secret
@@ -140,6 +140,16 @@ async def create_workspace(
                 to_state=WorkspaceState.REQUESTED,
                 reason="Creation approved by user",
                 actor_id=principal.user_id,
+            )
+        )
+        db.add(
+            AuditEvent(
+                organization_id=principal.organization_id,
+                actor_id=principal.user_id,
+                action="workspace.create.approved",
+                target_type="workspace",
+                target_id=str(workspace.id),
+                outcome="success",
             )
         )
         await transition(db, workspace, WorkspaceState.VALIDATING, "Request validated")

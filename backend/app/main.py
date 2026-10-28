@@ -4,8 +4,9 @@ import uuid
 from contextlib import asynccontextmanager
 
 import jwt
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, status
+from fastapi import FastAPI, Response, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from sqlalchemy import select
 
 from .api import router
@@ -20,6 +21,16 @@ logging.basicConfig(
     format='{"time":"%(asctime)s","level":"%(levelname)s","logger":"%(name)s","message":"%(message)s"}',
 )
 logger = logging.getLogger("omniweb")
+REQUESTS = Counter(
+    "omniweb_http_requests_total",
+    "HTTP requests processed",
+    ["method", "route", "status"],
+)
+LATENCY = Histogram(
+    "omniweb_http_request_duration_seconds",
+    "HTTP request duration",
+    ["method", "route"],
+)
 
 
 @asynccontextmanager
@@ -68,7 +79,10 @@ app.include_router(router)
 
 @app.middleware("http")
 async def security_headers(request, call_next):
-    response = await call_next(request)
+    route = request.url.path
+    with LATENCY.labels(request.method, route).time():
+        response = await call_next(request)
+    REQUESTS.labels(request.method, route, response.status_code).inc()
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
@@ -87,6 +101,11 @@ async def readiness() -> dict[str, str]:
     async with SessionLocal() as db:
         await db.execute(select(1))
     return {"status": "ready"}
+
+
+@app.get("/metrics", tags=["operations"], include_in_schema=False)
+async def metrics() -> Response:
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.websocket("/api/v1/terminal/{workspace_id}")
