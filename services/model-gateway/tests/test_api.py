@@ -163,3 +163,47 @@ async def test_running_requests_can_be_cancelled(org, monkeypatch):
         record = await db.scalar(select(UsageRecord).where(UsageRecord.request_id == "cancel-me-123"))
         assert record.status == "cancelled"
     await engine.dispose()
+
+
+def test_pinned_model_runs_exactly_once_with_attribution(org, monkeypatch):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "openai_api_key", "sk-test-platform-key")
+    calls: list[str] = []
+
+    async def fake_complete(entry, credential, messages, max_output, timeout, response_format=None):
+        calls.append(entry.model_id)
+        raise ProviderError("provider_error", "down")
+
+    monkeypatch.setattr(main, "complete", fake_complete)
+    with TestClient(app) as client:
+        asyncio.run(_seed_openai_models([("pinned-a", 2.0), ("pinned-b", 1.0)]))
+        body = {**CHAT, "model": "openai/pinned-a", "task_id": "t-1", "execution_id": "e-1", "strategy": "hosted_model"}
+        response = client.post("/v1/chat", json=body, headers=headers(org))
+        assert response.status_code == 502
+        assert calls == ["pinned-a"]  # no fallback to another model
+
+        async def ok(*args, **kwargs):
+            return Completion("done", 100, 10, 0)
+
+        monkeypatch.setattr(main, "complete", ok)
+        response = client.post("/v1/chat", json=body, headers=headers(org))
+        assert response.status_code == 200 and response.json()["model_id"] == "pinned-a"
+        assert client.post("/v1/chat", json={**body, "model": "openai/missing"}, headers=headers(org)).status_code == 422
+
+    async def records():
+        async with SessionLocal() as db:
+            return list(await db.scalars(select(UsageRecord).where(UsageRecord.organization_id == org)))
+
+    rows = asyncio.run(records())
+    assert {(r.task_id, r.execution_id, r.strategy) for r in rows} == {("t-1", "e-1", "hosted_model")}
+
+
+def test_budget_endpoint_reports_limits_and_spend(org):
+    with TestClient(app) as client:
+        response = client.get("/v1/budgets", headers=headers(org, project=uuid.uuid4()))
+        assert response.status_code == 200
+        scopes = {b["scope"]: b for b in response.json()["budgets"]}
+        assert set(scopes) == {"organization_monthly", "project"}
+        assert scopes["organization_monthly"]["remaining_usd"] == scopes["organization_monthly"]["limit_usd"]
+        models = client.get("/v1/models?routable_only=true", headers=headers(org)).json()
+        assert all(m["billing_model"] in {"platform", "customer"} for m in models)

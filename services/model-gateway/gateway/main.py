@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Response
 from pydantic import BaseModel, Field, SecretStr
-from sqlalchemy import func, select
+from sqlalchemy import func, inspect, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import budgets as budget_service
@@ -19,6 +19,7 @@ from .config import Settings, get_settings
 from .database import SessionLocal, engine, get_db
 from .inference import ProviderError, complete, cost, estimate_tokens
 from .models import (
+    ADDED_COLUMNS,
     Base,
     BudgetAlert,
     ModelEntry,
@@ -28,7 +29,15 @@ from .models import (
 )
 from .providers import DEV_PROVIDER, PROVIDERS, discover
 from .registry import PLATFORM, credentials_for, refresh, seed_dev_models
-from .routing import COMPLEXITY_TIER, TIERS, RouteRequest, candidates, escalation_path
+from .routing import (
+    COMPLEXITY_TIER,
+    DEFAULT_CONTEXT,
+    TIERS,
+    RouteRequest,
+    candidates,
+    escalation_path,
+    worst_case_cost,
+)
 from .security import Caller, admin_caller, caller, encrypt, fingerprint
 
 logger = logging.getLogger("omniweb.gateway")
@@ -40,10 +49,20 @@ async def lifespan(_: FastAPI):
     settings = get_settings()
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
+        await connection.run_sync(_add_missing_columns)
     async with SessionLocal() as db:
         await seed_dev_models(db, settings)
     yield
     await engine.dispose()
+
+
+def _add_missing_columns(connection) -> None:
+    inspector = inspect(connection)
+    for table, columns in ADDED_COLUMNS.items():
+        existing = {c["name"] for c in inspector.get_columns(table)}
+        for name, kind in columns.items():
+            if name not in existing:
+                connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {kind}"))
 
 
 app = FastAPI(title="Omniweb Model Gateway", version="0.1.0", lifespan=lifespan)
@@ -64,6 +83,12 @@ class ChatRequest(BaseModel):
     agent: str = Field(default="assistant", max_length=64)
     request_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{8,64}$")
     response_format: dict | None = None
+    # A pinned "provider/model_id" runs exactly that model with no fallback. The AI execution
+    # engine uses this because it makes the routing decision and accounts for each attempt.
+    model: str | None = Field(default=None, max_length=240)
+    task_id: str | None = Field(default=None, max_length=40)
+    execution_id: str | None = Field(default=None, max_length=40)
+    strategy: str | None = Field(default=None, max_length=24)
 
 
 class CredentialInput(BaseModel):
@@ -103,6 +128,7 @@ def model_view(entry: ModelEntry) -> dict:
         "routable": entry.routable,
         "deprecated": entry.deprecated,
         "pricing_source": entry.pricing_source,
+        "billing_model": "platform" if entry.scope == PLATFORM else "customer",
         "last_verified_at": entry.last_verified_at.isoformat(),
     }
 
@@ -360,8 +386,12 @@ async def put_budget(
 
 
 async def _record(db: AsyncSession, identity: Caller, request_id: str, entry: ModelEntry, tier: str, billing_model: str,
-                  status: str, attempt: int, agent: str, started: float, completion=None, error: str | None = None) -> UsageRecord:
+                  status: str, attempt: int, agent: str, started: float, completion=None, error: str | None = None,
+                  attribution: ChatRequest | None = None) -> UsageRecord:
     record = UsageRecord(
+        task_id=attribution.task_id if attribution else None,
+        execution_id=attribution.execution_id if attribution else None,
+        strategy=attribution.strategy if attribution else None,
         request_id=request_id,
         organization_id=identity.organization_id,
         user_id=identity.user_id,
@@ -408,6 +438,9 @@ async def chat(
     estimated_input = estimate_tokens(messages)
     entries = await routable_entries(db, identity.organization_id, settings)
     credentials = await credentials_for(db, identity.organization_id, settings)
+    if body.model:
+        return await _pinned_chat(db, identity, body, request_id, entries, credentials, messages, estimated_input, max_output,
+                                  remaining, settings)
     attempts: list[dict] = []
     tried: set[str] = set()
     blocked_providers: set[str] = set()
@@ -445,18 +478,18 @@ async def chat(
             try:
                 completion = await task
             except asyncio.CancelledError:
-                await _record(db, identity, request_id, entry, current_tier, billing_model, "cancelled", len(attempts) + 1, body.agent, started)
+                await _record(db, identity, request_id, entry, current_tier, billing_model, "cancelled", len(attempts) + 1, body.agent, started, attribution=body)
                 await db.commit()
                 raise HTTPException(status_code=499, detail="Request cancelled") from None
             except ProviderError as exc:
-                await _record(db, identity, request_id, entry, current_tier, billing_model, "failed", len(attempts) + 1, body.agent, started, error=exc.kind)
+                await _record(db, identity, request_id, entry, current_tier, billing_model, "failed", len(attempts) + 1, body.agent, started, error=exc.kind, attribution=body)
                 attempts.append({"model": key, "tier": current_tier, "status": "failed", "error": exc.kind})
                 if exc.kind in {"authentication", "rate_limited", "no_credentials"}:
                     blocked_providers.add(entry.provider)
                 continue
             finally:
                 INFLIGHT.pop(request_id, None)
-            record = await _record(db, identity, request_id, entry, current_tier, billing_model, "succeeded", len(attempts) + 1, body.agent, started, completion)
+            record = await _record(db, identity, request_id, entry, current_tier, billing_model, "succeeded", len(attempts) + 1, body.agent, started, completion, attribution=body)
             attempts.append({"model": key, "tier": current_tier, "status": "succeeded"})
             alerts = await budget_service.record_alerts(
                 db, await budget_service.states(db, identity.organization_id, identity.project_id, settings)
@@ -491,6 +524,59 @@ async def chat(
             detail="No configured model satisfies this request's tier, capabilities, context size, and remaining budget.",
         )
     raise HTTPException(status_code=502, detail={"message": "All model attempts failed", "attempts": attempts})
+
+
+async def _pinned_chat(db: AsyncSession, identity: Caller, body: ChatRequest, request_id: str, entries: list[ModelEntry], credentials: dict,
+                       messages: list[dict], estimated_input: int, max_output: int, remaining: float, settings: Settings) -> dict:
+    entry = next((e for e in entries if f"{e.provider}/{e.model_id}" == body.model and e.available and e.routable and not e.deprecated), None)
+    if not entry:
+        raise HTTPException(status_code=422, detail="The pinned model is not routable for this organization")
+    if (entry.context_window or DEFAULT_CONTEXT) < estimated_input + max_output and entry.provider != DEV_PROVIDER:
+        raise HTTPException(status_code=422, detail="Request exceeds the pinned model's context window")
+    if worst_case_cost(entry, estimated_input, max_output) > remaining:
+        raise HTTPException(status_code=402, detail="The request's worst-case cost exceeds the remaining budget")
+    credential = credentials.get(entry.provider)
+    billing_model = credential.billing_model if credential else "platform"
+    tier = body.strategy or "pinned"
+    started = time.monotonic()
+    task = asyncio.create_task(complete(entry, credential, messages, max_output, settings.request_timeout_seconds, body.response_format))
+    INFLIGHT[request_id] = (identity.organization_id, task)
+    try:
+        completion = await task
+    except asyncio.CancelledError:
+        await _record(db, identity, request_id, entry, tier, billing_model, "cancelled", 1, body.agent, started, attribution=body)
+        await db.commit()
+        raise HTTPException(status_code=499, detail="Request cancelled") from None
+    except ProviderError as exc:
+        await _record(db, identity, request_id, entry, tier, billing_model, "failed", 1, body.agent, started, error=exc.kind, attribution=body)
+        await db.commit()
+        raise HTTPException(status_code=502, detail={"message": f"Model call failed: {exc.kind}", "error": exc.kind}) from None
+    finally:
+        INFLIGHT.pop(request_id, None)
+    record = await _record(db, identity, request_id, entry, tier, billing_model, "succeeded", 1, body.agent, started, completion, attribution=body)
+    alerts = await budget_service.record_alerts(db, await budget_service.states(db, identity.organization_id, identity.project_id, settings))
+    await db.commit()
+    return {
+        "request_id": request_id, "content": completion.content, "provider": entry.provider, "model_id": entry.model_id,
+        "display_name": entry.display_name, "tier": tier, "requested_tier": tier, "billing_model": billing_model,
+        "development_model": entry.provider == DEV_PROVIDER,
+        "usage": {"input_tokens": record.input_tokens, "output_tokens": record.output_tokens, "cached_tokens": record.cached_tokens,
+                  "cost_usd": record.cost_usd, "latency_ms": record.latency_ms},
+        "attempts": [{"model": body.model, "tier": tier, "status": "succeeded"}], "alerts": alerts,
+    }
+
+
+@app.get("/v1/budgets")
+async def get_budgets(identity: Caller = Depends(caller), db: AsyncSession = Depends(get_db), settings: Settings = Depends(get_settings)) -> dict:
+    budget_states = await budget_service.states(db, identity.organization_id, identity.project_id, settings)
+    await db.commit()
+    return {
+        "budgets": [
+            {"scope": s.budget.scope, "scope_id": s.budget.scope_id, "limit_usd": s.budget.limit_usd, "spent_usd": round(s.spent_usd, 8),
+             "remaining_usd": round(s.remaining_usd, 8), "hard_limit": s.budget.hard_limit, "alert_threshold": s.budget.alert_threshold}
+            for s in budget_states
+        ]
+    }
 
 
 @app.post("/v1/requests/{request_id}/cancel")

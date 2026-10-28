@@ -72,7 +72,15 @@ class UsageRecord(Base):
     cost_usd: Mapped[float] = mapped_column(Float, default=0)
     latency_ms: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str | None] = mapped_column(String(300))
+    # Attribution from the AI execution engine, so its task ledger reconciles with this one.
+    task_id: Mapped[str | None] = mapped_column(String(40), index=True)
+    execution_id: Mapped[str | None] = mapped_column(String(40))
+    strategy: Mapped[str | None] = mapped_column(String(24))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+
+
+# Columns added after the first release; created on startup for existing databases.
+ADDED_COLUMNS = {"usage_records": {"task_id": "VARCHAR(40)", "execution_id": "VARCHAR(40)", "strategy": "VARCHAR(24)"}}
 
 
 class Budget(Base):
