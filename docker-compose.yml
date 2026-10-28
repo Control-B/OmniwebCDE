@@ -87,6 +87,13 @@ services:
       # Keycloak, set it to http://localhost:8180/realms/omniweb (the issuer browsers see).
       OMNIWEB_OIDC_ISSUER: ${OMNIWEB_OIDC_ISSUER:-}
       OMNIWEB_OIDC_DISCOVERY_URL: http://keycloak:8080/realms/omniweb
+      OMNIWEB_BUILDER_DATA_DIR: /data
+      OMNIWEB_PREVIEW_URL: http://localhost:43230
+    volumes:
+      - builder-data:/data
+    # The namespace sandbox creates unprivileged user namespaces for generated-app builds. Docker's
+    # default seccomp profile blocks that; use OMNIWEB_SANDBOX_MODE=container on a dedicated build
+    # host instead of loosening the profile on a shared machine.
     depends_on:
       postgres:
         condition: service_healthy
@@ -94,6 +101,19 @@ services:
         condition: service_healthy
       model-gateway:
         condition: service_started
+
+  preview:
+    build:
+      context: ./backend
+    command: ["uvicorn", "app.preview_server:app", "--host", "0.0.0.0", "--port", "43230"]
+    environment:
+      OMNIWEB_ENVIRONMENT: development
+      OMNIWEB_BUILDER_DATA_DIR: /data
+      OMNIWEB_FRONTEND_ORIGIN: http://localhost:43210
+    volumes:
+      - builder-data:/data:ro
+    ports:
+      - "43230:43230"
 
   model-gateway:
     build:
@@ -136,3 +156,4 @@ services:
 volumes:
   postgres-data:
   redis-data:
+  builder-data:

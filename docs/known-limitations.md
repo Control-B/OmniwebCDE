@@ -30,3 +30,22 @@ Current boundaries:
 
 The mock mode validates UI flow, state transitions, idempotency, cost re-approval, and
 application-level tenant isolation without creating chargeable resources.
+
+## Application builder
+
+- AI agents (architect, editor, repair) have only been exercised through their fallback
+  paths because no provider keys were available. Without a provider, edits are limited to
+  the patterns the built-in planner understands, and failing checks are not repaired
+  automatically.
+- GitHub sync has been tested against a local bare repository only. Real GitHub App
+  installation tokens, branch protection, and webhooks are untested.
+- App Platform deploys and rollbacks have run only against the mock provider. No
+  DigitalOcean resources were created.
+- The namespace sandbox isolates network, filesystem, processes, and environment, and caps
+  CPU time, file size, and process count with `prlimit`. It has no memory cgroup limit.
+  The `container` sandbox mode is implemented but untested, so use it only after testing
+  it on a dedicated build host.
+- Preview APIs use SQLite, while deployed apps use managed PostgreSQL. The generated code
+  targets both through SQLAlchemy, but PostgreSQL migrations are only exercised on deploy.
+- The Expo app is bundled for the web preview but not type-checked, and native builds,
+  signing, and store submission are out of scope.

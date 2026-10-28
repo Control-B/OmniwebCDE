@@ -3,7 +3,12 @@ FROM python:3.12.12-slim AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-RUN useradd --create-home --uid 10001 omniweb
+# git stores each generated project; Node builds and tests generated apps inside the sandbox.
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y git nodejs npm \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN useradd --create-home --uid 10001 omniweb && mkdir -p /data && chown omniweb /data
 WORKDIR /app
 
 COPY pyproject.toml ./
