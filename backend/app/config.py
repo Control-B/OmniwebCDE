@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -21,6 +22,20 @@ class Settings(BaseSettings):
     coder_access_url: str = "http://coder.localhost"
     coder_token: str = Field(default="", repr=False)
     mock_infrastructure: bool = True
+
+    # Application builder. Generated code runs only inside the sandbox selected here.
+    builder_data_dir: str = "./.omniweb"
+    sandbox_mode: Literal["namespace", "container", "disabled"] = "namespace"
+    sandbox_image: str = "ghcr.io/omniweb/generated-app-runner:2026.10"
+    sandbox_timeout_seconds: int = 300
+    preview_url: str = "http://127.0.0.1:43230"
+    preview_secret: str = Field(default="", repr=False)
+    max_repair_attempts: int = 2
+
+    # GitHub App used for repository sync. Without an app ID, a local mock remote is used.
+    github_app_id: str = ""
+    github_app_private_key: str = Field(default="", repr=False)
+    github_api_url: str = "https://api.github.com"
 
     @property
     def is_production(self) -> bool:
