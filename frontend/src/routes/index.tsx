@@ -162,6 +162,14 @@ function App() {
           workspace={selected}
           onClose={() => setSelected(null)}
           onConsole={() => openConsole(selected)}
+          onUpdated={(workspace) => {
+            setWorkspaces((items) =>
+              workspace.state === 'DELETED'
+                ? items.filter((item) => item.id !== workspace.id)
+                : items.map((item) => (item.id === workspace.id ? workspace : item)),
+            )
+            setSelected(workspace.state === 'DELETED' ? null : workspace)
+          }}
         />
       )}
     </div>
@@ -265,15 +273,50 @@ function WorkspaceList({ workspaces, onSelect, onConsole }: { workspaces: Worksp
 }
 
 function CloudAccounts() {
+  const [showConnect, setShowConnect] = useState(false)
+  const [label, setLabel] = useState('DigitalOcean')
+  const [token, setToken] = useState('')
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const connections = useQuery({
+    queryKey: ['cloud-connections'],
+    queryFn: () => api.connections(),
+  })
+  const connect = async () => {
+    setSaving(true)
+    setError('')
+    try {
+      await api.connect(label, token)
+      await connections.refetch()
+      setShowConnect(false)
+      setToken('')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Connection failed')
+    } finally {
+      setSaving(false)
+    }
+  }
   return (
     <>
-      <div className="page-heading"><div><p className="eyebrow">Infrastructure</p><h1>Cloud accounts</h1><p>Connect scoped credentials. Omniweb never stores your cloud password.</p></div><button className="primary-button"><Plus size={16} /> Connect account</button></div>
-      <div className="panel account-card">
-        <div className="do-logo">DO</div><div className="account-main"><span className="status ready"><i />Connected</span><h2>Omniweb Production</h2><p>DigitalOcean · Team account</p></div>
-        <div className="account-detail"><span>Last verified</span><strong>Just now</strong></div><div className="account-detail"><span>Token scope</span><strong>Read & write</strong></div>
-        <button className="secondary-button">Manage</button>
-      </div>
+      <div className="page-heading"><div><p className="eyebrow">Infrastructure</p><h1>Cloud accounts</h1><p>Connect scoped credentials. Omniweb never stores your cloud password.</p></div><button className="primary-button" onClick={() => setShowConnect(true)}><Plus size={16} /> Connect account</button></div>
+      {(connections.data ?? []).map((connection) => (
+        <div className="panel account-card" key={connection.id}>
+          <div className="do-logo">DO</div><div className="account-main"><span className={`status ${connection.healthy ? 'ready' : 'stopped'}`}><i />{connection.healthy ? 'Connected' : 'Unhealthy'}</span><h2>{connection.label}</h2><p>DigitalOcean · •••{connection.token_fingerprint.slice(-4)}</p></div>
+          <div className="account-detail"><span>Last verified</span><strong>{connection.last_checked_at ? 'Recently' : 'Unknown'}</strong></div><div className="account-detail"><span>Account</span><strong>{connection.provider_account_id ?? 'Pending'}</strong></div>
+          <button className="secondary-button" onClick={() => connections.refetch()}>Verify</button>
+        </div>
+      ))}
+      {!connections.isLoading && !(connections.data ?? []).length && <div className="panel empty-account">No cloud account connected.</div>}
       <div className="security-banner"><ShieldCheck size={22} /><div><strong>Credentials are envelope-encrypted</strong><p>Provider tokens stay in the control plane and are never sent to browsers or workspace VMs.</p></div></div>
+      {showConnect && (
+        <div className="modal-backdrop" onMouseDown={() => setShowConnect(false)}>
+          <section className="connect-modal" onMouseDown={(event) => event.stopPropagation()}>
+            <header><div><span>CLOUD ACCOUNT</span><h2>Connect DigitalOcean</h2></div><button onClick={() => setShowConnect(false)}><X size={18} /></button></header>
+            <div><label>Connection label<input value={label} onChange={(event) => setLabel(event.target.value)} /></label><label>Scoped API token<input type="password" autoComplete="off" value={token} onChange={(event) => setToken(event.target.value)} placeholder="dop_v1_••••••••" /></label><p>Use a scoped token with account, Droplet, region, size, image, action, VPC, and tag permissions. Never enter your password.</p>{error && <div className="form-error" role="alert">{error}</div>}</div>
+            <footer><button className="secondary-button" onClick={() => setShowConnect(false)}>Cancel</button><button className="primary-button" disabled={saving || token.length < 8} onClick={connect}>{saving ? 'Verifying…' : 'Verify & connect'}</button></footer>
+          </section>
+        </div>
+      )}
     </>
   )
 }
@@ -311,10 +354,49 @@ function CreateWorkspace({ onClose, onCreated }: { onClose: () => void; onCreate
   const [name, setName] = useState('new-project')
   const [region, setRegion] = useState('nyc3')
   const [size, setSize] = useState('s-2vcpu-4gb')
-  const selectedSize = demoData.sizes.find((item) => item.slug === size)!
-  const create = () => {
-    const now = new Date().toISOString()
-    onCreated({ id: crypto.randomUUID(), name, region, size, image: 'ubuntu-24-04-x64', template: 'Full-stack TypeScript', state: 'READY', estimated_monthly_usd: selectedSize.monthly_usd, error_code: null, error_detail: null, created_at: now, updated_at: now })
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+  const connections = useQuery({
+    queryKey: ['cloud-connections'],
+    queryFn: () => api.connections(),
+  })
+  const regions = useQuery({
+    queryKey: ['regions'],
+    queryFn: () => api.regions(),
+  })
+  const sizes = useQuery({
+    queryKey: ['sizes', region],
+    queryFn: () => api.sizes(region),
+  })
+  const availableRegions = regions.data ?? demoData.regions
+  const availableSizes = sizes.data ?? demoData.sizes
+  const selectedSize = availableSizes.find((item) => item.slug === size) ?? availableSizes[0]
+  const connection = connections.data?.find((item) => item.healthy)
+
+  const create = async () => {
+    if (!connection || !selectedSize) {
+      setError('Connect a healthy cloud account before creating a workspace.')
+      return
+    }
+    setSubmitting(true)
+    setError('')
+    try {
+      const workspace = await api.createWorkspace({
+        name,
+        cloud_connection_id: connection.id,
+        region,
+        size: selectedSize.slug,
+        image: 'ubuntu-24-04-x64',
+        template: 'full-stack',
+        idempotency_key: `web-${name}-${crypto.randomUUID()}`,
+        approved_estimated_monthly_usd: selectedSize.monthly_usd,
+      })
+      onCreated(workspace)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Workspace creation failed')
+    } finally {
+      setSubmitting(false)
+    }
   }
   return (
     <div className="modal-backdrop" onMouseDown={onClose}>
@@ -322,26 +404,75 @@ function CreateWorkspace({ onClose, onCreated }: { onClose: () => void; onCreate
         <header><div><span>NEW WORKSPACE</span><h2>Create a development environment</h2></div><button onClick={onClose}><X size={19} /></button></header>
         <div className="stepper">{['Cloud', 'Compute', 'Template', 'Review'].map((label, index) => <div className={step >= index + 1 ? 'done' : ''} key={label}><i>{index + 1}</i><span>{label}</span></div>)}</div>
         <div className="modal-body">
-          {step === 1 && <><label>Workspace name<input value={name} onChange={(e) => setName(e.target.value)} /></label><label>Cloud account<div className="choice-card selected"><div className="do-logo small">DO</div><span><strong>Omniweb Production</strong><small>Connected and healthy</small></span><ShieldCheck size={18} /></div></label><label>Region<select value={region} onChange={(e) => setRegion(e.target.value)}>{demoData.regions.map((r) => <option key={r.slug} value={r.slug}>{r.name}</option>)}</select></label></>}
-          {step === 2 && <><div className="form-intro"><Server size={18} /><div><strong>Choose compute</strong><p>Availability and pricing are checked before provisioning.</p></div></div><div className="size-grid">{demoData.sizes.map((item) => <button className={size === item.slug ? 'selected' : ''} onClick={() => setSize(item.slug)} key={item.slug}><span>{item.vcpus} vCPU · {item.memory_mb / 1024} GB</span><strong>${item.monthly_usd}<small>/mo</small></strong><em>{item.disk_gb} GB SSD</em></button>)}</div></>}
+          {step === 1 && <><label>Workspace name<input value={name} onChange={(e) => setName(e.target.value)} /></label><label>Cloud account<div className={`choice-card ${connection ? 'selected' : ''}`}><div className="do-logo small">DO</div><span><strong>{connection?.label ?? 'No healthy account'}</strong><small>{connection ? 'Connected and healthy' : 'Connect DigitalOcean from Cloud accounts'}</small></span>{connection && <ShieldCheck size={18} />}</div></label><label>Region<select value={region} onChange={(e) => setRegion(e.target.value)}>{availableRegions.map((r) => <option key={r.slug} value={r.slug}>{r.name}</option>)}</select></label></>}
+          {step === 2 && <><div className="form-intro"><Server size={18} /><div><strong>Choose compute</strong><p>Availability and pricing are checked before provisioning.</p></div></div><div className="size-grid">{availableSizes.map((item) => <button className={size === item.slug ? 'selected' : ''} onClick={() => setSize(item.slug)} key={item.slug}><span>{item.vcpus} vCPU · {item.memory_mb / 1024} GB</span><strong>${item.monthly_usd}<small>/mo</small></strong><em>{item.disk_gb} GB SSD</em></button>)}</div></>}
           {step === 3 && <><label>Development template<div className="choice-card selected"><div className="template-icon"><Code2 size={19} /></div><span><strong>Full-stack TypeScript</strong><small>Node.js LTS, Python, Docker, Git, Codex CLI</small></span><ShieldCheck size={18} /></div></label><label>Base image<select><option>Ubuntu 24.04 LTS</option></select></label><div className="security-inline"><ShieldCheck size={18} /><span><strong>Private by default</strong>No public inbound SSH port. Access is routed through the authenticated workspace agent.</span></div></>}
-          {step === 4 && <><div className="review-title"><ShieldCheck size={22} /><div><strong>Ready to provision</strong><p>Review the cost and billing implications.</p></div></div><div className="review-grid"><span>Name<strong>{name}</strong></span><span>Region<strong>{region}</strong></span><span>Compute<strong>{selectedSize.vcpus} vCPU · {selectedSize.memory_mb / 1024} GB</strong></span><span>Image<strong>Ubuntu 24.04 LTS</strong></span></div><div className="price-review"><span>Estimated infrastructure cost<small>Provider billing is authoritative</small></span><strong>${selectedSize.monthly_usd}<small>/month</small></strong></div><p className="billing-note">Stopping may not eliminate all charges. Storage and reserved resources can continue billing until deleted.</p></>}
+          {step === 4 && selectedSize && <><div className="review-title"><ShieldCheck size={22} /><div><strong>Ready to provision</strong><p>Review the cost and billing implications.</p></div></div><div className="review-grid"><span>Name<strong>{name}</strong></span><span>Region<strong>{region}</strong></span><span>Compute<strong>{selectedSize.vcpus} vCPU · {selectedSize.memory_mb / 1024} GB</strong></span><span>Image<strong>Ubuntu 24.04 LTS</strong></span></div><div className="price-review"><span>Estimated infrastructure cost<small>Provider billing is authoritative</small></span><strong>${selectedSize.monthly_usd}<small>/month</small></strong></div><p className="billing-note">Stopping may not eliminate all charges. Storage and reserved resources can continue billing until deleted.</p></>}
+          {error && <div className="form-error" role="alert">{error}</div>}
         </div>
-        <footer><button className="secondary-button" onClick={step === 1 ? onClose : () => setStep(step - 1)}>{step === 1 ? 'Cancel' : 'Back'}</button><button className="primary-button" onClick={step === 4 ? create : () => setStep(step + 1)}>{step === 4 ? 'Approve & create' : 'Continue'} <span>→</span></button></footer>
+        <footer><button className="secondary-button" disabled={submitting} onClick={step === 1 ? onClose : () => setStep(step - 1)}>{step === 1 ? 'Cancel' : 'Back'}</button><button className="primary-button" disabled={submitting || (step === 1 && !connection)} onClick={step === 4 ? create : () => setStep(step + 1)}>{submitting ? 'Creating…' : step === 4 ? 'Approve & create' : 'Continue'} <span>→</span></button></footer>
       </section>
     </div>
   )
 }
 
-function WorkspaceDrawer({ workspace, onClose, onConsole }: { workspace: Workspace; onClose: () => void; onConsole: () => void }) {
+function WorkspaceDrawer({ workspace, onClose, onConsole, onUpdated }: {
+  workspace: Workspace
+  onClose: () => void
+  onConsole: () => void
+  onUpdated: (workspace: Workspace) => void
+}) {
+  const navigate = useNavigate()
+  const [pending, setPending] = useState('')
+  const [error, setError] = useState('')
+  const ready = workspace.state === 'READY'
+
+  const openIde = async () => {
+    setPending('ide')
+    setError('')
+    try {
+      const link = await api.access(workspace.id, 'ide')
+      const parsed = new URL(link.url, window.location.origin)
+      await navigate({
+        to: '/ide/$workspaceId',
+        params: { workspaceId: workspace.id },
+        search: { access_token: parsed.searchParams.get('access_token') ?? '' },
+      })
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not open IDE')
+      setPending('')
+    }
+  }
+
+  const lifecycle = async (action: 'start' | 'stop' | 'restart' | 'delete') => {
+    if (action === 'delete' && !window.confirm(`Delete ${workspace.name}? Provider resources will be removed.`)) return
+    setPending(action)
+    setError('')
+    try {
+      onUpdated(await api.lifecycle(workspace.id, action))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : `Could not ${action} workspace`)
+    } finally {
+      setPending('')
+    }
+  }
+
   return (
     <div className="drawer-backdrop" onMouseDown={onClose}><aside className="drawer" onMouseDown={(e) => e.stopPropagation()}>
-      <header><div className="workspace-symbol"><Code2 size={19} /></div><div><span className="status ready"><i />{workspace.state === 'READY' ? 'Running' : workspace.state}</span><h2>{workspace.name}</h2><p><GitBranch size={13} /> main · Updated 3 min ago</p></div><button onClick={onClose}><X size={19} /></button></header>
-      <div className="drawer-actions"><button className="primary-button"><ExternalLink size={16} /> Open IDE</button><button className="secondary-button" onClick={onConsole}><TerminalSquare size={16} /> Console</button></div>
+      <header><div className="workspace-symbol"><Code2 size={19} /></div><div><span className={`status ${ready ? 'ready' : 'stopped'}`}><i />{ready ? 'Running' : workspace.state.toLowerCase()}</span><h2>{workspace.name}</h2><p><GitBranch size={13} /> main · Updated 3 min ago</p></div><button onClick={onClose}><X size={19} /></button></header>
+      <div className="drawer-actions"><button className="primary-button" disabled={!ready || Boolean(pending)} onClick={openIde}><ExternalLink size={16} /> {pending === 'ide' ? 'Opening…' : 'Open IDE'}</button><button className="secondary-button" disabled={!ready || Boolean(pending)} onClick={onConsole}><TerminalSquare size={16} /> Console</button></div>
+      {error && <div className="form-error" role="alert">{error}</div>}
       <section><h3>Environment</h3><dl><div><dt>Provider</dt><dd>DigitalOcean</dd></div><div><dt>Region</dt><dd>{workspace.region}</dd></div><div><dt>Compute</dt><dd>{workspace.size}</dd></div><div><dt>Image</dt><dd>Ubuntu 24.04 LTS</dd></div><div><dt>Est. cost</dt><dd>${workspace.estimated_monthly_usd}/mo</dd></div></dl></section>
       <section><h3>Health</h3><div className="health-row"><span><i />Workspace agent</span><strong>Connected</strong></div><div className="health-row"><span><i />Coder transport</span><strong>Healthy</strong></div><div className="health-row"><span><i />Persistent disk</span><strong>Mounted</strong></div></section>
       <section><h3>Local IDE</h3><button className="guide-button"><Code2 size={17} /><span><strong>Open in VS Code</strong><small>Requires Coder extension</small></span><ExternalLink size={15} /></button><button className="guide-button"><Command size={17} /><span><strong>Open in Cursor</strong><small>Guided connection setup</small></span><ExternalLink size={15} /></button></section>
-      <div className="danger-actions"><button><Square size={15} /> Stop</button><button className="danger">Delete workspace</button></div>
+      <div className="danger-actions">
+        {ready ? (
+          <button disabled={Boolean(pending)} onClick={() => lifecycle('stop')}><Square size={15} /> {pending === 'stop' ? 'Stopping…' : 'Stop'}</button>
+        ) : (
+          <button disabled={Boolean(pending)} onClick={() => lifecycle('start')}><Play size={15} /> {pending === 'start' ? 'Starting…' : 'Start'}</button>
+        )}
+        <button className="danger" disabled={Boolean(pending)} onClick={() => lifecycle('delete')}>{pending === 'delete' ? 'Deleting…' : 'Delete workspace'}</button>
+      </div>
     </aside></div>
   )
 }

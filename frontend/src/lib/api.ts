@@ -10,6 +10,7 @@ export type WorkspaceState =
   | 'STARTING'
   | 'REBUILDING'
   | 'DELETING'
+  | 'DELETED'
   | 'FAILED'
   | 'RECOVERING'
 
