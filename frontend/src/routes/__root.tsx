@@ -4,6 +4,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import appCss from '../styles.css?url'
 import omniwebCss from '../omniweb.css?url'
 import builderCss from '../builder.css?url'
+import studioCss from '../studio.css?url'
+import { platform } from '../lib/api'
+import { AuthProvider } from '../lib/auth'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 15_000, retry: 1 } },
@@ -37,6 +40,10 @@ export const Route = createRootRoute({
         rel: 'stylesheet',
         href: builderCss,
       },
+      {
+        rel: 'stylesheet',
+        href: studioCss,
+      },
     ],
   }),
   shellComponent: RootDocument,
@@ -49,7 +56,9 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <HeadContent />
       </head>
       <body>
-        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider fetchMe={platform.me}>{children}</AuthProvider>
+        </QueryClientProvider>
         <Scripts />
       </body>
     </html>

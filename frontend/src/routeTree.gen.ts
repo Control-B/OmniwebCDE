@@ -12,9 +12,15 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as AppRouteImport } from './routes/app'
+import { Route as SigninRouteImport } from './routes/signin'
+import { Route as UsageRouteImport } from './routes/usage'
+import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 import { Route as BuildProjectIdRouteImport } from './routes/build.$projectId'
 import { Route as ConsoleWorkspaceIdRouteImport } from './routes/console.$workspaceId'
 import { Route as IdeWorkspaceIdRouteImport } from './routes/ide.$workspaceId'
+import { Route as ProjectsIndexRouteImport } from './routes/projects.index'
+import { Route as ProjectsProjectIdIndexRouteImport } from './routes/projects.$projectId.index'
+import { Route as ProjectsProjectIdSettingsRouteImport } from './routes/projects.$projectId.settings'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -29,6 +35,21 @@ const AboutRoute = AboutRouteImport.update({
 const AppRoute = AppRouteImport.update({
   id: '/app',
   path: '/app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SigninRoute = SigninRouteImport.update({
+  id: '/signin',
+  path: '/signin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UsageRoute = UsageRouteImport.update({
+  id: '/usage',
+  path: '/usage',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthCallbackRoute = AuthCallbackRouteImport.update({
+  id: '/auth/callback',
+  path: '/auth/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BuildProjectIdRoute = BuildProjectIdRouteImport.update({
@@ -46,31 +67,65 @@ const IdeWorkspaceIdRoute = IdeWorkspaceIdRouteImport.update({
   path: '/ide/$workspaceId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProjectsIndexRoute = ProjectsIndexRouteImport.update({
+  id: '/projects/',
+  path: '/projects/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProjectsProjectIdIndexRoute = ProjectsProjectIdIndexRouteImport.update({
+  id: '/projects/$projectId/',
+  path: '/projects/$projectId/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProjectsProjectIdSettingsRoute =
+  ProjectsProjectIdSettingsRouteImport.update({
+    id: '/projects/$projectId/settings',
+    path: '/projects/$projectId/settings',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/app': typeof AppRoute
+  '/signin': typeof SigninRoute
+  '/usage': typeof UsageRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/build/$projectId': typeof BuildProjectIdRoute
   '/console/$workspaceId': typeof ConsoleWorkspaceIdRoute
   '/ide/$workspaceId': typeof IdeWorkspaceIdRoute
+  '/projects/': typeof ProjectsIndexRoute
+  '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
+  '/projects/$projectId/': typeof ProjectsProjectIdIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/app': typeof AppRoute
+  '/signin': typeof SigninRoute
+  '/usage': typeof UsageRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/build/$projectId': typeof BuildProjectIdRoute
   '/console/$workspaceId': typeof ConsoleWorkspaceIdRoute
   '/ide/$workspaceId': typeof IdeWorkspaceIdRoute
+  '/projects': typeof ProjectsIndexRoute
+  '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
+  '/projects/$projectId': typeof ProjectsProjectIdIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/app': typeof AppRoute
+  '/signin': typeof SigninRoute
+  '/usage': typeof UsageRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/build/$projectId': typeof BuildProjectIdRoute
   '/console/$workspaceId': typeof ConsoleWorkspaceIdRoute
   '/ide/$workspaceId': typeof IdeWorkspaceIdRoute
+  '/projects/': typeof ProjectsIndexRoute
+  '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
+  '/projects/$projectId/': typeof ProjectsProjectIdIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -78,34 +133,58 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/app'
+    | '/signin'
+    | '/usage'
+    | '/auth/callback'
     | '/build/$projectId'
     | '/console/$workspaceId'
     | '/ide/$workspaceId'
+    | '/projects/'
+    | '/projects/$projectId/settings'
+    | '/projects/$projectId/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/about'
     | '/app'
+    | '/signin'
+    | '/usage'
+    | '/auth/callback'
     | '/build/$projectId'
     | '/console/$workspaceId'
     | '/ide/$workspaceId'
+    | '/projects'
+    | '/projects/$projectId/settings'
+    | '/projects/$projectId'
   id:
     | '__root__'
     | '/'
     | '/about'
     | '/app'
+    | '/signin'
+    | '/usage'
+    | '/auth/callback'
     | '/build/$projectId'
     | '/console/$workspaceId'
     | '/ide/$workspaceId'
+    | '/projects/'
+    | '/projects/$projectId/settings'
+    | '/projects/$projectId/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
   AppRoute: typeof AppRoute
+  SigninRoute: typeof SigninRoute
+  UsageRoute: typeof UsageRoute
+  AuthCallbackRoute: typeof AuthCallbackRoute
   BuildProjectIdRoute: typeof BuildProjectIdRoute
   ConsoleWorkspaceIdRoute: typeof ConsoleWorkspaceIdRoute
   IdeWorkspaceIdRoute: typeof IdeWorkspaceIdRoute
+  ProjectsIndexRoute: typeof ProjectsIndexRoute
+  ProjectsProjectIdSettingsRoute: typeof ProjectsProjectIdSettingsRoute
+  ProjectsProjectIdIndexRoute: typeof ProjectsProjectIdIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -131,6 +210,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/signin': {
+      id: '/signin'
+      path: '/signin'
+      fullPath: '/signin'
+      preLoaderRoute: typeof SigninRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/usage': {
+      id: '/usage'
+      path: '/usage'
+      fullPath: '/usage'
+      preLoaderRoute: typeof UsageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/callback': {
+      id: '/auth/callback'
+      path: '/auth/callback'
+      fullPath: '/auth/callback'
+      preLoaderRoute: typeof AuthCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/build/$projectId': {
       id: '/build/$projectId'
       path: '/build/$projectId'
@@ -152,6 +252,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IdeWorkspaceIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/projects/': {
+      id: '/projects/'
+      path: '/projects'
+      fullPath: '/projects/'
+      preLoaderRoute: typeof ProjectsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/projects/$projectId/': {
+      id: '/projects/$projectId/'
+      path: '/projects/$projectId'
+      fullPath: '/projects/$projectId/'
+      preLoaderRoute: typeof ProjectsProjectIdIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/projects/$projectId/settings': {
+      id: '/projects/$projectId/settings'
+      path: '/projects/$projectId/settings'
+      fullPath: '/projects/$projectId/settings'
+      preLoaderRoute: typeof ProjectsProjectIdSettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -159,9 +280,15 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
   AppRoute: AppRoute,
+  SigninRoute: SigninRoute,
+  UsageRoute: UsageRoute,
+  AuthCallbackRoute: AuthCallbackRoute,
   BuildProjectIdRoute: BuildProjectIdRoute,
   ConsoleWorkspaceIdRoute: ConsoleWorkspaceIdRoute,
   IdeWorkspaceIdRoute: IdeWorkspaceIdRoute,
+  ProjectsIndexRoute: ProjectsIndexRoute,
+  ProjectsProjectIdSettingsRoute: ProjectsProjectIdSettingsRoute,
+  ProjectsProjectIdIndexRoute: ProjectsProjectIdIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

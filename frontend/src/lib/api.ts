@@ -1,3 +1,5 @@
+import { accessToken, type Me } from './auth'
+
 export type WorkspaceState =
   | 'REQUESTED'
   | 'VALIDATING'
@@ -60,16 +62,198 @@ const API_URL =
     ? 'http://localhost:8010'
     : '')
 
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message)
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_URL}/api/v1${path}`, {
-    ...init,
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
-  })
+  const token = await accessToken()
+  let response: Response
+  try {
+    response = await fetch(`${API_URL}/api/v1${path}`, {
+      ...init,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...init?.headers,
+      },
+    })
+  } catch {
+    throw new ApiError('The Omniweb API is not reachable. Start it with `uvicorn app.main:app --port 8010`.', 0)
+  }
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Request failed' }))
-    throw new Error(error.detail ?? 'Request failed')
+    const detail = typeof error.detail === 'string' ? error.detail : (error.detail?.message ?? 'Request failed')
+    throw new ApiError(response.status === 401 ? `401: ${detail}` : detail, response.status)
   }
+  if (response.status === 204) return undefined as T
   return response.json()
+}
+
+export type GenerationStatus = 'draft' | 'planning' | 'generating' | 'ready' | 'failed'
+export type Tier = 'economy' | 'standard' | 'advanced' | 'self_hosted'
+
+export interface Project {
+  id: string
+  name: string
+  description: string
+  prompt: string
+  template: string
+  template_label: string
+  stack: string[]
+  generation_status: GenerationStatus
+  deployment_status: string
+  github_repo: string | null
+  app_config: Record<string, unknown>
+  estimated_usage_usd: number
+  message_count: number
+  your_role: 'owner' | 'editor' | 'viewer'
+  created_at: string
+  updated_at: string
+}
+
+export interface ChatMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  agent: string | null
+  model: string | null
+  tier: string | null
+  input_tokens: number
+  output_tokens: number
+  cost_usd: number
+  development_model: boolean
+  created_at: string
+}
+
+export interface Execution {
+  id: string
+  agent: string
+  stage: string
+  status: 'running' | 'succeeded' | 'failed' | 'cancelled'
+  model: string | null
+  cost_usd: number
+  detail: string | null
+  attempts: { model: string; tier: string; status: string; error?: string }[]
+  started_at: string
+  finished_at: string | null
+}
+
+export interface UsageBucket {
+  key: string
+  requests: number
+  failed: number
+  input_tokens: number
+  output_tokens: number
+  cached_tokens: number
+  cost_usd: number
+}
+
+export interface Usage {
+  totals: UsageBucket
+  failed_cost_usd: number
+  by_model: UsageBucket[]
+  by_agent: UsageBucket[]
+  by_project: UsageBucket[]
+  by_billing_model: UsageBucket[]
+  budgets: { scope: string; limit_usd: number; spent_usd: number; remaining_usd: number; hard_limit: boolean; alert_threshold: number }[]
+  alerts: { message: string; kind: string; created_at: string }[]
+  recent: { request_id: string; agent: string; model: string; tier: string; status: string; input_tokens: number; output_tokens: number; cost_usd: number; latency_ms: number; created_at: string }[]
+}
+
+export interface ProviderStatus {
+  provider: string
+  label: string
+  kind: 'hosted' | 'self_hosted' | 'development'
+  needs_key: boolean
+  needs_base_url: boolean
+  configured: 'platform' | 'customer' | null
+  key_fingerprint: string | null
+  base_url: string
+  models: number
+}
+
+export interface ModelInfo {
+  provider: string
+  model_id: string
+  display_name: string
+  capabilities: string[]
+  context_window: number | null
+  input_usd_per_mtok: number | null
+  output_usd_per_mtok: number | null
+  supports_tools: boolean
+  supports_structured_output: boolean
+  available: boolean
+  routable: boolean
+  deprecated: boolean
+  pricing_source: string
+  last_verified_at: string
+}
+
+export interface Preferences {
+  default_tier: Tier
+  allowed_providers: string[]
+  pinned_models: Record<string, string>
+  max_escalations: number
+  max_attempts?: number
+}
+
+export interface Member {
+  user_id: string
+  email: string
+  display_name: string
+  role: string
+}
+
+const json = (method: string, body: unknown): RequestInit => ({ method, body: JSON.stringify(body) })
+
+export const platform = {
+  me: () => request<Me>('/me'),
+  projects: () => request<Project[]>('/projects'),
+  createProject: (prompt: string) => request<Project>('/projects', json('POST', { prompt })),
+  project: (id: string) => request<Project>(`/projects/${id}`),
+  updateProject: (id: string, input: Partial<Pick<Project, 'name' | 'description' | 'template' | 'app_config'>>) =>
+    request<Project>(`/projects/${id}`, json('PATCH', input)),
+  deleteProject: (id: string, confirmName: string) =>
+    request<void>(`/projects/${id}?confirm_name=${encodeURIComponent(confirmName)}`, { method: 'DELETE' }),
+  messages: (id: string) => request<ChatMessage[]>(`/projects/${id}/messages`),
+  send: (id: string, content: string, requestId: string, tier?: Tier) =>
+    request<{ user_message: ChatMessage; assistant_message: ChatMessage; alerts: string[] }>(
+      `/projects/${id}/messages`,
+      json('POST', { content, request_id: requestId, ...(tier ? { tier } : {}) }),
+    ),
+  cancel: (id: string, requestId: string) => request<unknown>(`/projects/${id}/requests/${requestId}/cancel`, { method: 'POST' }),
+  executions: (id: string) => request<Execution[]>(`/projects/${id}/executions`),
+  projectUsage: (id: string) => request<Usage>(`/projects/${id}/usage`),
+  projectBudget: (id: string, limit_usd: number, hard_limit: boolean) =>
+    request<unknown>(`/projects/${id}/budget`, json('PUT', { limit_usd, hard_limit })),
+  projectPreferences: (id: string) => request<Preferences>(`/projects/${id}/model-preferences`),
+  setProjectPreferences: (id: string, prefs: Omit<Preferences, 'max_attempts'>) =>
+    request<Preferences>(`/projects/${id}/model-preferences`, json('PUT', prefs)),
+  members: (id: string) => request<Member[]>(`/projects/${id}/members`),
+  addMember: (id: string, email: string, role: 'editor' | 'viewer') => request<Member>(`/projects/${id}/members`, json('POST', { email, role })),
+  removeMember: (id: string, userId: string) => request<void>(`/projects/${id}/members/${userId}`, { method: 'DELETE' }),
+  env: (id: string) => request<{ key: string; environment: string; updated_at: string }[]>(`/projects/${id}/env`),
+  setEnv: (id: string, key: string, value: string, environment: string) =>
+    request<unknown>(`/projects/${id}/env`, json('PUT', { key, value, environment })),
+  deleteEnv: (id: string, environment: string, key: string) =>
+    request<void>(`/projects/${id}/env/${environment}/${encodeURIComponent(key)}`, { method: 'DELETE' }),
+  providers: () => request<ProviderStatus[]>('/ai/providers'),
+  setCredential: (provider: string, apiKey: string, baseUrl: string) =>
+    request<unknown>(`/ai/credentials/${provider}`, json('PUT', { api_key: apiKey || null, base_url: baseUrl })),
+  deleteCredential: (provider: string) => request<void>(`/ai/credentials/${provider}`, { method: 'DELETE' }),
+  refreshRegistry: () => request<Record<string, { status: string; models?: number }>>('/ai/registry/refresh', { method: 'POST' }),
+  models: (provider?: string) => request<ModelInfo[]>(`/ai/models${provider ? `?provider=${provider}` : ''}`),
+  tiers: () => request<{ tier: Tier; candidates: ModelInfo[]; count: number }[]>('/ai/tiers'),
+  usage: () => request<Usage>('/ai/usage'),
+  orgBudget: (limit_usd: number, hard_limit: boolean) => request<unknown>('/ai/budget', json('PUT', { limit_usd, hard_limit })),
+  orgPreferences: () => request<Preferences>('/ai/preferences'),
+  setOrgPreferences: (prefs: Omit<Preferences, 'max_attempts'>) => request<Preferences>('/ai/preferences', json('PUT', prefs)),
 }
 
 export const api = {
