@@ -46,10 +46,18 @@ def test_migrations_are_append_only_and_flag_destructive_changes():
     assert first["revision"] == "0001" and not first["destructive"]
     added = apply_instruction(spec, "add a deposit amount to loans").spec
     second = migrations.plan(spec, added, [first])
-    assert second["down_revision"] == "0001" and second["ops"] == [{"op": "add_column", "table": "loans", "field": {"name": "deposit_amount", "type": "number"}}]
+    assert second["down_revision"] == "0001" and second["ops"] == [
+        {
+            "op": "add_column",
+            "table": "loans",
+            "field": {"name": "deposit_amount", "type": "number"},
+        }
+    ]
     removed = apply_instruction(added, "remove tools").spec
     third = migrations.plan(added, removed, [first, second])
-    assert third["destructive"] and third["destructive_summary"] == ["Drop table tools and all its data"]
+    assert third["destructive"] and third["destructive_summary"] == [
+        "Drop table tools and all its data"
+    ]
 
 
 def test_store_keeps_user_edits_and_rejects_unsafe_paths(tmp_path):
@@ -66,7 +74,13 @@ def test_store_keeps_user_edits_and_rejects_unsafe_paths(tmp_path):
         assert store.read("a.txt") == "mine\n" and store.user_modified() == ["a.txt"]
         result = store.apply({"a.txt": "one v3\n"})
         assert "b.txt" in result.deleted
-        for bad in ["../x", "/etc/passwd", ".git/config", ".omniweb/manifest.json", "apps/node_modules/x.js"]:
+        for bad in [
+            "../x",
+            "/etc/passwd",
+            ".git/config",
+            ".omniweb/manifest.json",
+            "apps/node_modules/x.js",
+        ]:
             with pytest.raises(StoreError):
                 store.write(bad, "x")
         sha = await store.commit("second", "user")
@@ -89,14 +103,22 @@ def test_sandbox_hides_host_files_network_and_environment(tmp_path, monkeypatch)
         "python3 -c \"import socket\ntry:\n socket.create_connection(('1.1.1.1', 53), 2); print('net=open')\nexcept OSError: print('net=blocked')\"; "
         "echo sk-abcdefghijklmnopqrstuvwxyz"
     )
-    result = asyncio.run(sandbox.run(settings, sandbox.Job(command=["sh", "-c", probe], app_dir=tmp_path), toolchain.toolchain_dir(settings)))
+    result = asyncio.run(
+        sandbox.run(
+            settings,
+            sandbox.Job(command=["sh", "-c", probe], app_dir=tmp_path),
+            toolchain.toolchain_dir(settings),
+        )
+    )
     if result.exit_code != 0 and "unshare" in result.output:
         pytest.skip("user namespaces are not permitted here")
     lines = result.output.splitlines()
     assert lines[0] == "0" and lines[1] == "0"
     assert "OMNIWEB_FAKE_SECRET" not in result.output and "HOME=/tmp" in result.output
     assert "net=blocked" in result.output
-    assert "pid=1" in result.output or any(line.startswith("pid=") and int(line[4:]) < 10 for line in lines)
+    assert "pid=1" in result.output or any(
+        line.startswith("pid=") and int(line[4:]) < 10 for line in lines
+    )
     assert "sk-abcdefghijklmnopqrstuvwxyz" not in result.output and "[redacted]" in result.output
 
 
@@ -121,7 +143,13 @@ def test_generate_edit_approve_undo_sync_and_deploy(client, live_gateway):
 
     state = wait(client, project["id"])
     assert state["run"]["status"] == "succeeded", state["run"]
-    assert state["last_build"]["ok"] and [s["name"] for s in state["last_build"]["steps"]] == ["web.typecheck", "web.test", "web.build", "api.test", "api.migrate"]
+    assert state["last_build"]["ok"] and [s["name"] for s in state["last_build"]["steps"]] == [
+        "web.typecheck",
+        "web.test",
+        "web.build",
+        "api.test",
+        "api.migrate",
+    ]
     assert state["preview"]["web"] and state["preview"]["api"]["running"]
     messages = client.get(f"{base}/messages").json()
     assert messages[-1]["agent"] == "builder" and "All 5 checks passed" in messages[-1]["content"]
@@ -130,8 +158,13 @@ def test_generate_edit_approve_undo_sync_and_deploy(client, live_gateway):
     socket = Path(get_settings().builder_data_dir).resolve() / "run" / token / "api.sock"
 
     async def call_preview_api():
-        async with httpx.AsyncClient(transport=httpx.AsyncHTTPTransport(uds=str(socket)), base_url="http://preview") as api:
-            registered = await api.post("/api/auth/register", json={"email": "sam@example.com", "password": "correct-horse-9"})
+        async with httpx.AsyncClient(
+            transport=httpx.AsyncHTTPTransport(uds=str(socket)), base_url="http://preview"
+        ) as api:
+            registered = await api.post(
+                "/api/auth/register",
+                json={"email": "sam@example.com", "password": "correct-horse-9"},
+            )
             headers = {"Authorization": f"Bearer {registered.json()['access_token']}"}
             created = await api.post("/api/tools", json={"name": "Ladder"}, headers=headers)
             return created.status_code, (await api.get("/api/tools")).status_code
@@ -141,12 +174,17 @@ def test_generate_edit_approve_undo_sync_and_deploy(client, live_gateway):
     from app import preview_server
 
     async def browse_preview():
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=preview_server.app), base_url=f"http://{token}.preview.localhost") as browser:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=preview_server.app),
+            base_url=f"http://{token}.preview.localhost",
+        ) as browser:
             page = await browser.get("/")
             assert page.status_code == 200 and "__omniweb/bridge.js" in page.text
             assert "frame-ancestors" in page.headers["content-security-policy"]
             assert (await browser.get("/api/health")).json() == {"status": "ok"}
-            assert "root:" not in (await browser.get("/assets/..%2F..%2F..%2F..%2Fetc%2Fpasswd")).text
+            assert (
+                "root:" not in (await browser.get("/assets/..%2F..%2F..%2F..%2Fetc%2Fpasswd")).text
+            )
             other = await browser.get("/", headers={"host": "ffffffffffffffff.preview.localhost"})
             assert other.status_code == 404
 
@@ -155,19 +193,37 @@ def test_generate_edit_approve_undo_sync_and_deploy(client, live_gateway):
     edit = client.post(f"{base}/edits", json={"instruction": "Add a deposit amount to loans"})
     assert edit.status_code == 202
     state = wait(client, project["id"])
-    assert state["run"]["status"] == "succeeded" and state["run"]["changes"] == ["Added Deposit amount to Loans"]
+    assert state["run"]["status"] == "succeeded" and state["run"]["changes"] == [
+        "Added Deposit amount to Loans"
+    ]
 
     client.post(f"{base}/edits", json={"instruction": "remove the condition field from tools"})
     state = wait(client, project["id"])
-    assert state["run"]["status"] == "awaiting_approval" and state["approvals"][0]["kind"] == "destructive_migration"
+    assert (
+        state["run"]["status"] == "awaiting_approval"
+        and state["approvals"][0]["kind"] == "destructive_migration"
+    )
     assert client.post(f"{base}/edits", json={"instruction": "make it green"}).status_code == 409
-    decision = client.post(f"{base}/approvals/{state['approvals'][0]['id']}/decision", json={"decision": "reject"})
+    decision = client.post(
+        f"{base}/approvals/{state['approvals'][0]['id']}/decision", json={"decision": "reject"}
+    )
     assert decision.json()["approval"]["status"] == "rejected"
     schema = client.get(f"{base}/schema").json()
-    assert "condition" in [f["name"] for f in schema["entities"][0]["fields"]] and len(schema["migrations"]) == 2
+    assert (
+        "condition" in [f["name"] for f in schema["entities"][0]["fields"]]
+        and len(schema["migrations"]) == 2
+    )
 
-    dashboard = client.get(f"{base}/files/content", params={"path": "apps/web/src/pages/Dashboard.tsx"}).json()["content"]
-    saved = client.put(f"{base}/files", json={"path": "apps/web/src/pages/Dashboard.tsx", "content": dashboard + "\n// kept by hand\n"})
+    dashboard = client.get(
+        f"{base}/files/content", params={"path": "apps/web/src/pages/Dashboard.tsx"}
+    ).json()["content"]
+    saved = client.put(
+        f"{base}/files",
+        json={
+            "path": "apps/web/src/pages/Dashboard.tsx",
+            "content": dashboard + "\n// kept by hand\n",
+        },
+    )
     assert saved.status_code == 200 and saved.json()["run"]["kind"] == "verify"
     assert wait(client, project["id"])["run"]["status"] == "succeeded"
     client.post(f"{base}/edits", json={"instruction": "make it green"})
@@ -180,19 +236,36 @@ def test_generate_edit_approve_undo_sync_and_deploy(client, live_gateway):
     assert wait(client, project["id"])["run"]["status"] == "succeeded"
     assert client.get(f"{base}/checkpoints").json()["can_redo"]
 
-    connection = client.post("/api/v1/cloud-connections", json={"label": "Toolshed DO", "token": "dop_v1_mock_token"}).json()
+    connection = client.post(
+        "/api/v1/cloud-connections", json={"label": "Toolshed DO", "token": "dop_v1_mock_token"}
+    ).json()
     blocked = client.post(f"{base}/deployments", json={"environment": "development"})
     assert blocked.status_code == 409 and "Push" in blocked.json()["detail"]
-    assert client.post(f"{base}/github/connect", json={"repo": f"neighbours/toolshed-{uuid.uuid4().hex[:6]}"}).status_code == 200
+    assert (
+        client.post(
+            f"{base}/github/connect", json={"repo": f"neighbours/toolshed-{uuid.uuid4().hex[:6]}"}
+        ).status_code
+        == 200
+    )
     pushed = client.post(f"{base}/github/push").json()
     clone = Path(client.get(f"{base}/github").json()["clone_url"])
-    log = subprocess.run(["git", "--git-dir", str(clone), "log", "--format=%H", "-1", "main"], capture_output=True, text=True, check=True)
+    log = subprocess.run(
+        ["git", "--git-dir", str(clone), "log", "--format=%H", "-1", "main"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
     assert log.stdout.strip() == pushed["pushed"]
     assert "token" not in (clone / "config").read_text().lower()
 
-    estimate = client.post(f"{base}/deployments/estimate", json={"environment": "production"}).json()
+    estimate = client.post(
+        f"{base}/deployments/estimate", json={"environment": "production"}
+    ).json()
     assert estimate["monthly_usd"] == 30.0
-    requested = client.post(f"{base}/deployments", json={"environment": "production", "cloud_connection_id": connection["id"]})
+    requested = client.post(
+        f"{base}/deployments",
+        json={"environment": "production", "cloud_connection_id": connection["id"]},
+    )
     assert requested.status_code == 201, requested.text
     approval = requested.json()["approval"]
     assert approval["requires_confirmation"]
@@ -203,13 +276,23 @@ def test_generate_edit_approve_undo_sync_and_deploy(client, live_gateway):
     assert deployment["status"] == "live" and deployment["url"].endswith(".mock.ondigitalocean.app")
     assert "dop_v1" not in str(approved)
     rollback = client.post(f"{base}/deployments/{deployment['id']}/rollback").json()
-    rolled = client.post(f"{base}/approvals/{rollback['approval']['id']}/decision", json={"decision": "approve", "confirm": project["name"]}).json()
-    assert rolled["deployment"]["status"] == "live" and rolled["deployment"]["rollback_of"] == deployment["id"]
+    rolled = client.post(
+        f"{base}/approvals/{rollback['approval']['id']}/decision",
+        json={"decision": "approve", "confirm": project["name"]},
+    ).json()
+    assert (
+        rolled["deployment"]["status"] == "live"
+        and rolled["deployment"]["rollback_of"] == deployment["id"]
+    )
 
-    outsider = Principal(user_id=uuid.uuid4(), organization_id=uuid.uuid4(), email="x@example.com", role="owner")
+    outsider = Principal(
+        user_id=uuid.uuid4(), organization_id=uuid.uuid4(), email="x@example.com", role="owner"
+    )
     app.dependency_overrides[get_principal] = lambda: outsider
     assert client.get(f"{base}/builder").status_code == 404
-    viewer = Principal(user_id=uuid.uuid4(), organization_id=DEV_ORG_ID, email="v@example.com", role="viewer")
+    viewer = Principal(
+        user_id=uuid.uuid4(), organization_id=DEV_ORG_ID, email="v@example.com", role="viewer"
+    )
     app.dependency_overrides[get_principal] = lambda: viewer
     assert client.post(f"{base}/edits", json={"instruction": "make it blue"}).status_code == 404
     app.dependency_overrides.clear()

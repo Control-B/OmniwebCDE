@@ -35,7 +35,7 @@ from ..models import (
     Project,
 )
 from ..schemas import Principal
-from ..services import gateway
+from ..services import aaee, gateway
 from . import edits, migrations, preview, templates, verify
 from .sandbox import SandboxUnavailable
 from .spec import ARCHITECT_SYSTEM_PROMPT, AppSpec, heuristic_spec, parse_model_spec
@@ -43,7 +43,9 @@ from .store import ProjectStore, StoreError, clean_path
 
 logger = logging.getLogger("omniweb.pipeline")
 ACTIVE = {"queued", "running"}
-AGENT_PATHS = re.compile(r"^(apps/web/src/|apps/mobile/src/|apps/mobile/App\.tsx$|services/api/app/|packages/api-client/src/)")
+AGENT_PATHS = re.compile(
+    r"^(apps/web/src/|apps/mobile/src/|apps/mobile/App\.tsx$|services/api/app/|packages/api-client/src/)"
+)
 _tasks: dict[str, asyncio.Task] = {}
 
 
@@ -70,6 +72,8 @@ class BuildState(TypedDict, total=False):
     message: str
     resume_at: str
     used_model: bool
+    aaee_pending: list[dict]
+    aaee_repair: dict | None
 
 
 def now() -> datetime:
@@ -101,7 +105,9 @@ async def _step(run_id: str, name: str, status: str, detail: str = "") -> None:
         if not run:
             return
         steps = [s for s in run.steps if not (s["name"] == name and s["status"] == "running")]
-        steps.append({"name": name, "status": status, "detail": detail[:2000], "at": now().isoformat()})
+        steps.append(
+            {"name": name, "status": status, "detail": detail[:2000], "at": now().isoformat()}
+        )
         run.steps = steps[-60:]
         run.stage = name
         await db.commit()
@@ -133,7 +139,12 @@ def node(name: str):
                 await _step(state["run_id"], name, "failed", str(exc))
                 return {**state, "outcome": "error", "message": f"{name} failed: {exc}"}
             merged = {**state, **update}
-            await _step(state["run_id"], name, "done", update.get("detail", "") if isinstance(update, dict) else "")
+            await _step(
+                state["run_id"],
+                name,
+                "done",
+                update.get("detail", "") if isinstance(update, dict) else "",
+            )
             merged.pop("detail", None)
             await _save(state["run_id"], merged)
             return merged
@@ -147,14 +158,259 @@ def node(name: str):
 # -- model access -----------------------------------------------------------------------------
 
 
-async def ask_model(state: BuildState, agent: str, system: str, user: str, tier: str | None = None, max_tokens: int = 6000) -> dict | None:
-    """Calls the gateway. Returns None when only the development model is configured or the call fails."""
+def _principal(run: GenerationRun, project: Project) -> Principal:
+    return Principal(
+        user_id=run.requested_by or project.owner_id,
+        organization_id=project.organization_id,
+        email="builder@omniweb.local",
+        role="member",
+    )
+
+
+async def ask_model(
+    state: BuildState,
+    agent: str,
+    system: str,
+    user: str,
+    tier: str | None = None,
+    max_tokens: int = 6000,
+    *,
+    engine_task: dict | None = None,
+) -> dict | None:
+    """Routes a builder agent's request through AAEE, or the gateway directly if AAEE is unreachable.
+
+    Returns None when only the development model is configured or the call fails. Results that
+    came through AAEE carry an `aaee` entry; code results must later be validated with
+    `report_checks` so AAEE learns from the verified outcome.
+    """
+    settings = get_settings()
+    if settings.aaee_enabled:
+        try:
+            return await _ask_engine(state, agent, system, user, max_tokens, engine_task or {})
+        except aaee.Unavailable:
+            logger.info("AAEE unavailable; %s calls the gateway directly", agent)
+        except HTTPException as exc:
+            # AAEE refused (budget, rate limit, policy). Bypassing it through the gateway would
+            # also bypass that decision, so the builder falls back to its non-AI path instead.
+            logger.warning("AAEE refused the %s task: %s", agent, exc.detail)
+            return None
+    return await _ask_gateway(state, agent, system, user, tier, max_tokens)
+
+
+AGENT_TASKS = {
+    "architect": ("architecture_design", "architecture"),
+    "editor": ("incremental_code_edit", "implementation"),
+    "repair": ("debugging", "debugging"),
+}
+
+
+async def _ask_engine(
+    state: BuildState, agent: str, system: str, user: str, max_tokens: int, extra: dict
+) -> dict | None:
+    settings = get_settings()
+    task_type, phase = AGENT_TASKS[agent]
+    async with SessionLocal() as db:
+        run = await db.get(GenerationRun, uuid.UUID(state["run_id"]))
+        project = await _project(db, state)
+        principal = _principal(run, project)
+        project_id, organization_id, template = (
+            project.id,
+            project.organization_id,
+            project.template,
+        )
+    extra = dict(extra)
+    send_prompt = extra.pop("engine_prompt", True)
+    description = extra.pop("description", None)
+    body: dict[str, Any] = {
+        "task_type": task_type,
+        "task_description": (description or user)[:20_000],
+        "project_id": str(project_id),
+        "development_phase": phase,
+        "execution_environment": {"kind": "builder_sandbox"},
+        "context": {"template": template, "agent": agent},
+        # Stable per run and step, so a run resumed after a restart reuses its AAEE task.
+        "idempotency_key": f"run:{state['run_id']}:{agent}:{state.get('repair_attempts', 0)}",
+        **extra,
+    }
+    if system and send_prompt:
+        body["prompt"] = {
+            "system": system,
+            "user": user,
+            "response_format": "json",
+            "max_output_tokens": max_tokens,
+        }
+    task = await aaee.submit(settings, principal, body, project_id=project_id)
+    return await _engine_result(state, agent, phase, principal, project_id, organization_id, task)
+
+
+async def _engine_result(
+    state, agent, phase, principal, project_id, organization_id, task: dict
+) -> dict | None:
+    action = task.get("next_action") or {}
+    executions = task.get("executions") or []
+    async with SessionLocal() as db:
+        run = await db.get(GenerationRun, uuid.UUID(state["run_id"]))
+        status = {
+            "completed": "succeeded",
+            "awaiting_validation": "validating",
+            "awaiting_caller": "deterministic",
+        }.get(task["status"], "failed")
+        db.add(
+            AgentExecution(
+                project_id=project_id,
+                organization_id=organization_id,
+                agent=agent,
+                stage=state.get("resume_at", agent),
+                status=status,
+                request_id=task["id"].replace("-", ""),
+                model=task.get("model") or action.get("model") or action.get("tool"),
+                cost_usd=task.get("total_cost_usd", 0),
+                detail=(action.get("reason") or f"AAEE {task.get('strategy') or 'plan'} · {phase}")[
+                    :500
+                ],
+                attempts=[
+                    {
+                        "attempt": e.get("attempt"),
+                        "strategy": e.get("strategy"),
+                        "model": e.get("model"),
+                        "status": e.get("status"),
+                        "cost_usd": e.get("total_cost_usd"),
+                    }
+                    for e in executions
+                ][:10],
+                aaee_task_id=task["id"],
+                strategy=task.get("strategy"),
+                phase=phase,
+                finished_at=now(),
+            )
+        )
+        run.cost_usd = round((run.cost_usd or 0) + task.get("total_cost_usd", 0), 6)
+        await db.commit()
+    pending = {"task_id": task["id"], "agent": agent}
+    if task["status"] == "completed":
+        output = (task.get("result") or {}).get("output") or {}
+        if output.get("development_model"):
+            return None
+        return {
+            "content": output.get("content") or "",
+            "files": output.get("files"),
+            "aaee": None,
+            "strategy": task.get("strategy"),
+        }
+    if task["status"] == "awaiting_caller" and action.get("type") == "deterministic":
+        return {
+            "content": "",
+            "deterministic": action["tool"],
+            "aaee": {**pending, "execution_id": action["execution_id"]},
+            "strategy": "deterministic",
+        }
+    if task["status"] == "awaiting_validation" and action.get("type") == "result":
+        output = action.get("output") or {}
+        latest = next(
+            (e for e in reversed(executions) if e.get("id") == action["execution_id"]), {}
+        )
+        if latest.get("development_model"):
+            return None
+        return {
+            "content": output.get("content") or "",
+            "files": output.get("files"),
+            "aaee": {**pending, "execution_id": action["execution_id"]},
+            "strategy": action.get("strategy"),
+        }
+    logger.info(
+        "AAEE task %s ended as %s: %s", task["id"], task["status"], action.get("reason", "")
+    )
+    return None
+
+
+async def report_checks(
+    state: BuildState, pending: list[dict], verify_result: dict, *, continue_repair: bool
+) -> dict | None:
+    """Sends sandbox check results to AAEE for every result awaiting validation.
+
+    Returns the next repair proposal when AAEE escalated a failed debugging attempt.
+    """
+    settings = get_settings()
+    if not pending:
+        return None
+    async with SessionLocal() as db:
+        run = await db.get(GenerationRun, uuid.UUID(state["run_id"]))
+        project = await _project(db, state)
+        principal = _principal(run, project)
+        project_id, organization_id = project.id, project.organization_id
+    store = ProjectStore(settings, state["project_id"])
+    items = aaee.evidence_from_checks(verify_result.get("steps") or [])
+    if not items:
+        reason = verify_result.get("unavailable") or "Checks did not run"
+        items = [
+            {
+                "name": "builder.sandbox",
+                "kind": "build",
+                "status": "unavailable",
+                "output": reason[:2000],
+            }
+        ]
+    proposal = None
+    for entry in pending:
+        files = []
+        for path in entry.get("files", [])[:400]:
+            try:
+                files.append({"path": path, "content": store.read(path)})
+            except StoreError:
+                continue
+        is_repair = entry["agent"] == "repair"
+        report = {
+            "items": items,
+            "changed_files": entry.get("files", [])[:500],
+            "output_files": files,
+            "continue_automatically": bool(is_repair and continue_repair),
+            "repair_context": {
+                "files": files[:60],
+                "notes": "Sandbox checks after applying the previous patch.",
+            }
+            if is_repair
+            else None,
+        }
+        try:
+            task = await aaee.validate(
+                settings,
+                principal,
+                {"id": entry["task_id"]},
+                entry["execution_id"],
+                report,
+                project_id=project_id,
+            )
+        except (aaee.Unavailable, HTTPException) as exc:
+            logger.warning("Could not report checks to AAEE for %s: %s", entry["task_id"], exc)
+            continue
+        if is_repair and task["status"] == "awaiting_validation":
+            proposal = await _engine_result(
+                state, "repair", "debugging", principal, project_id, organization_id, task
+            )
+        elif is_repair and task["status"] not in {"completed"}:
+            proposal = {
+                "stopped": (task.get("next_action") or {}).get("reason")
+                or f"AAEE stopped the repair ({task['status']})"
+            }
+    return proposal
+
+
+async def _ask_gateway(
+    state: BuildState, agent: str, system: str, user: str, tier: str | None, max_tokens: int
+) -> dict | None:
     settings = get_settings()
     async with SessionLocal() as db:
         run = await db.get(GenerationRun, uuid.UUID(state["run_id"]))
         project = await _project(db, state)
-        principal = Principal(user_id=run.requested_by or project.owner_id, organization_id=project.organization_id, email="builder@omniweb.local", role="member")
-        execution = AgentExecution(project_id=project.id, organization_id=project.organization_id, agent=agent, stage=state.get("resume_at", agent), status="running", request_id=uuid.uuid4().hex)
+        principal = _principal(run, project)
+        execution = AgentExecution(
+            project_id=project.id,
+            organization_id=project.organization_id,
+            agent=agent,
+            stage=state.get("resume_at", agent),
+            status="running",
+            request_id=uuid.uuid4().hex,
+        )
         db.add(execution)
         await db.commit()
         payload = {
@@ -168,7 +424,9 @@ async def ask_model(state: BuildState, agent: str, system: str, user: str, tier:
         if tier:
             payload["tier"] = tier
         try:
-            result = await gateway.call(settings, principal, "POST", "/v1/chat", project_id=project.id, json=payload)
+            result = await gateway.call(
+                settings, principal, "POST", "/v1/chat", project_id=project.id, json=payload
+            )
         except HTTPException as exc:
             execution.status = "failed"
             execution.detail = str(exc.detail)[:500]
@@ -197,20 +455,52 @@ async def understand(state: BuildState) -> BuildState:
         if kind == "verify":
             if not current:
                 raise NoChange("Generate the app before running checks.")
-            return {"spec": current.model_dump(), "changes": [], "detail": "Checking the current code"}
+            return {
+                "spec": current.model_dump(),
+                "changes": [],
+                "detail": "Checking the current code",
+            }
         if kind == "restore":
-            checkpoint = await db.scalar(select(Checkpoint).where(Checkpoint.project_id == project.id, Checkpoint.sha == state["restore_sha"]))
+            checkpoint = await db.scalar(
+                select(Checkpoint).where(
+                    Checkpoint.project_id == project.id, Checkpoint.sha == state["restore_sha"]
+                )
+            )
             if not checkpoint or not checkpoint.spec:
                 raise NoChange("That checkpoint can't be restored.")
-            return {"spec": checkpoint.spec, "changes": [f"Restored {checkpoint.message}"], "detail": f"Restoring {checkpoint.sha[:7]}"}
-        conversation = await db.scalar(select(Conversation).where(Conversation.project_id == project.id).order_by(Conversation.created_at))
-        history = list(await db.scalars(select(Message).where(Message.conversation_id == conversation.id, Message.role == "user").order_by(Message.created_at))) if conversation else []
+            return {
+                "spec": checkpoint.spec,
+                "changes": [f"Restored {checkpoint.message}"],
+                "detail": f"Restoring {checkpoint.sha[:7]}",
+            }
+        conversation = await db.scalar(
+            select(Conversation)
+            .where(Conversation.project_id == project.id)
+            .order_by(Conversation.created_at)
+        )
+        history = (
+            list(
+                await db.scalars(
+                    select(Message)
+                    .where(Message.conversation_id == conversation.id, Message.role == "user")
+                    .order_by(Message.created_at)
+                )
+            )
+            if conversation
+            else []
+        )
         template, prompt, name = project.template, project.prompt, project.name
     if kind == "generate" or current is None:
-        fallback = heuristic_spec(" ".join([prompt, *(m.content for m in history[-6:])]), template, name)
+        fallback = heuristic_spec(
+            " ".join([prompt, *(m.content for m in history[-6:])]), template, name
+        )
         request = (
             f"Template: {template} (targets {fallback.targets}). App name: {name}.\n\nOriginal request:\n{prompt}\n\n"
-            + ("Follow-up messages:\n" + "\n".join(f"- {m.content}" for m in history[-10:]) if history else "")
+            + (
+                "Follow-up messages:\n" + "\n".join(f"- {m.content}" for m in history[-10:])
+                if history
+                else ""
+            )
             + f"\n\nA draft specification for reference:\n{fallback.model_dump_json()}"
         )
         result = await ask_model(state, "architect", ARCHITECT_SYSTEM_PROMPT, request)
@@ -220,20 +510,66 @@ async def understand(state: BuildState) -> BuildState:
         return {
             "spec": spec.model_dump(),
             "used_model": used,
-            "changes": [f"Planned {len(spec.entities)} data models: {', '.join(e.label for e in spec.entities)}"],
-            "detail": ("Specification from the architect agent" if used else "Specification from the built-in parser (no AI provider configured)"),
+            "changes": [
+                f"Planned {len(spec.entities)} data models: {', '.join(e.label for e in spec.entities)}"
+            ],
+            "detail": (
+                "Specification from the architect agent"
+                if used
+                else "Specification from the built-in parser (no AI provider configured)"
+            ),
         }
     instruction = state.get("instruction", "")
-    result = await ask_model(
-        state, "editor", edits.EDIT_SYSTEM_PROMPT, f"Current specification:\n{current.model_dump_json()}\n\nChange request:\n{instruction}"
+    notes: list[str] = []
+    edited = edits.apply_instruction(current.model_copy(deep=True), instruction, notes)
+    # When the rule-based editor fully understands the request, AAEE can choose it at no model cost.
+    engine_task = (
+        {
+            "deterministic_options": [
+                {
+                    "tool": "builder.spec_rules",
+                    "coverage": "exact",
+                    "description": "Rule-based specification edit",
+                }
+            ]
+        }
+        if edited and not edited.unhandled
+        else {}
     )
-    if result:
+    result = await ask_model(
+        state,
+        "editor",
+        edits.EDIT_SYSTEM_PROMPT,
+        f"Current specification:\n{current.model_dump_json()}\n\nChange request:\n{instruction}",
+        engine_task=engine_task,
+    )
+    if (
+        result
+        and result.get("deterministic") == "builder.spec_rules"
+        and edited
+        and not edited.unhandled
+    ):
+        return {
+            "spec": edited.spec.model_dump(),
+            "changes": edited.changes,
+            "files": {},
+            "used_model": False,
+            "aaee_pending": [result["aaee"]],
+            "detail": "; ".join(edited.changes)[:500],
+        }
+    if result and not result.get("deterministic"):
         parsed = _parse_edit(result["content"], current)
         if parsed:
             spec, changes, files = parsed
-            return {"spec": spec.model_dump(), "changes": changes, "files": files, "used_model": True, "detail": "; ".join(changes)[:500]}
-    notes: list[str] = []
-    edited = edits.apply_instruction(current, instruction, notes)
+            pending = [result["aaee"]] if result.get("aaee") else []
+            return {
+                "spec": spec.model_dump(),
+                "changes": changes,
+                "files": files,
+                "used_model": True,
+                "aaee_pending": pending,
+                "detail": "; ".join(changes)[:500],
+            }
     if not edited and notes:
         raise NoChange(" ".join(dict.fromkeys(notes)) + " Nothing needed to change.")
     if not edited:
@@ -242,7 +578,13 @@ async def understand(state: BuildState) -> BuildState:
             "“remove the notes field from clients”, “add invoices”, “make it green”, or “add sign-in”. "
             "You can also edit any file directly in the Code tab."
         )
-    return {"spec": edited.spec.model_dump(), "changes": edited.changes, "files": {}, "used_model": False, "detail": "; ".join(edited.changes)}
+    return {
+        "spec": edited.spec.model_dump(),
+        "changes": edited.changes,
+        "files": {},
+        "used_model": False,
+        "detail": "; ".join(edited.changes),
+    }
 
 
 def _parse_edit(content: str, current: AppSpec) -> tuple[AppSpec, list[str], dict[str, str]] | None:
@@ -272,7 +614,12 @@ async def plan(state: BuildState) -> BuildState:
         project = await _project(db, state)
         previous = AppSpec.model_validate(project.spec) if project.spec else None
         target = AppSpec.model_validate(state["spec"])
-        if previous and previous.model_dump() == target.model_dump() and not state.get("files") and state["kind"] == "edit":
+        if (
+            previous
+            and previous.model_dump() == target.model_dump()
+            and not state.get("files")
+            and state["kind"] == "edit"
+        ):
             raise NoChange("That's already how the app works, so nothing changed.")
         migration = migrations.plan(previous, target, project.migrations or [])
         if migration and migration["destructive"] and not state.get("approved"):
@@ -287,8 +634,16 @@ async def plan(state: BuildState) -> BuildState:
             )
             db.add(approval)
             await db.commit()
-            return {"migration": migration, "approval_id": str(approval.id), "outcome": "awaiting_approval", "detail": approval.summary}
-    return {"migration": migration, "detail": migration["message"] if migration else "No database changes"}
+            return {
+                "migration": migration,
+                "approval_id": str(approval.id),
+                "outcome": "awaiting_approval",
+                "detail": approval.summary,
+            }
+    return {
+        "migration": migration,
+        "detail": migration["message"] if migration else "No database changes",
+    }
 
 
 @node("apply")
@@ -320,18 +675,32 @@ async def apply(state: BuildState) -> BuildState:
         await db.commit()
     if state["kind"] == "verify":
         sha = await store.head()
-        return {"commit_sha": sha, "applied": {"written": [], "deleted": [], "preserved": []}, "detail": "Using the current commit"}
+        return {
+            "commit_sha": sha,
+            "applied": {"written": [], "deleted": [], "preserved": []},
+            "detail": "Using the current commit",
+        }
     changes = state.get("changes") or []
-    label = {"generate": "Generate", "restore": "Restore", "edit": "Edit"}.get(state["kind"], "Update")
+    label = {"generate": "Generate", "restore": "Restore", "edit": "Edit"}.get(
+        state["kind"], "Update"
+    )
     message = f"{label}: {changes[0] if changes else spec.name}"
     if state.get("action") in {"undo", "redo"}:
-        message = f"{state['action'].title()}: {changes[0].removeprefix('Restored ') if changes else ''}"
+        message = (
+            f"{state['action'].title()}: {changes[0].removeprefix('Restored ') if changes else ''}"
+        )
     sha = await store.commit(message, "agent") or await store.head()
     applied = {"written": result.written, "deleted": result.deleted, "preserved": result.preserved}
     async with SessionLocal() as db:
         project = await _project(db, state)
         parent = project.head_sha
-        if sha and sha != parent and not await db.scalar(select(Checkpoint).where(Checkpoint.project_id == project.id, Checkpoint.sha == sha)):
+        if (
+            sha
+            and sha != parent
+            and not await db.scalar(
+                select(Checkpoint).where(Checkpoint.project_id == project.id, Checkpoint.sha == sha)
+            )
+        ):
             db.add(
                 Checkpoint(
                     project_id=project.id,
@@ -341,7 +710,8 @@ async def apply(state: BuildState) -> BuildState:
                     author="agent",
                     run_id=uuid.UUID(state["run_id"]),
                     restores_sha=state.get("restore_sha"),
-                    action=state.get("action") or ("restore" if state["kind"] == "restore" else "change"),
+                    action=state.get("action")
+                    or ("restore" if state["kind"] == "restore" else "change"),
                     undo_of=state.get("undo_of"),
                     spec=project.spec,
                     migrations=project.migrations,
@@ -352,7 +722,14 @@ async def apply(state: BuildState) -> BuildState:
     detail = f"{len(result.written)} files written, {len(result.deleted)} removed"
     if result.preserved:
         detail += f", kept your edits to {len(result.preserved)}"
-    return {"commit_sha": sha, "applied": applied, "detail": detail}
+    # CI workflow files come from Omniweb's own templates, never from an agent, and AAEE's path
+    # policy rightly refuses agent output there.
+    produced = [p for p in result.written if not p.startswith(".github/")]
+    pending = [
+        {**entry, "files": entry.get("files") or produced}
+        for entry in state.get("aaee_pending") or []
+    ]
+    return {"commit_sha": sha, "applied": applied, "aaee_pending": pending, "detail": detail}
 
 
 @node("verify")
@@ -365,16 +742,35 @@ async def check(state: BuildState) -> BuildState:
         if result is None:
             await _step(state["run_id"], f"check:{step.name}", "running", step.label)
         else:
-            await _step(state["run_id"], f"check:{step.name}", "done" if result.ok else "failed", f"{step.label} — {'passed' if result.ok else 'failed'} in {result.duration:.1f}s")
+            await _step(
+                state["run_id"],
+                f"check:{step.name}",
+                "done" if result.ok else "failed",
+                f"{step.label} — {'passed' if result.ok else 'failed'} in {result.duration:.1f}s",
+            )
 
     try:
-        results, root = await verify.run_checks(settings, store, spec.targets, state["run_id"], progress)
+        results, root = await verify.run_checks(
+            settings, store, spec.targets, state["run_id"], progress
+        )
     except SandboxUnavailable as exc:
-        return {"verify": {"ok": False, "unavailable": str(exc), "steps": [], "failed": []}, "detail": str(exc)}
+        unavailable = {"ok": False, "unavailable": str(exc), "steps": [], "failed": []}
+        if state.get("aaee_pending"):
+            await report_checks(state, state["aaee_pending"], unavailable, continue_repair=False)
+        return {"verify": unavailable, "aaee_pending": [], "detail": str(exc)}
     summary = verify.summarize(results)
     summary["build_dir"] = str(root)
     passed = sum(1 for r in results if r.ok)
-    return {"verify": summary, "detail": f"{passed}/{len(results)} checks passed"}
+    update: BuildState = {"verify": summary, "detail": f"{passed}/{len(results)} checks passed"}
+    if state.get("aaee_pending"):
+        more_repairs = (
+            not summary["ok"] and state.get("repair_attempts", 0) < settings.max_repair_attempts
+        )
+        update["aaee_repair"] = await report_checks(
+            state, state["aaee_pending"], summary, continue_repair=more_repairs
+        )
+        update["aaee_pending"] = []
+    return update
 
 
 @node("repair")
@@ -386,9 +782,15 @@ async def repair(state: BuildState) -> BuildState:
     failures = [s for s in state["verify"]["steps"] if not s["ok"]]
     mentioned = set()
     for failure in failures:
-        mentioned |= set(re.findall(r"((?:apps|services|packages)/[\w./-]+\.(?:tsx?|py))", failure["output"]))
-        mentioned |= {f"services/api/{p}" for p in re.findall(r"\b(app/[\w/]+\.py)", failure["output"])}
-        mentioned |= {f"apps/web/{p}" for p in re.findall(r"\b(src/[\w/.-]+\.tsx?)", failure["output"])}
+        mentioned |= set(
+            re.findall(r"((?:apps|services|packages)/[\w./-]+\.(?:tsx?|py))", failure["output"])
+        )
+        mentioned |= {
+            f"services/api/{p}" for p in re.findall(r"\b(app/[\w/]+\.py)", failure["output"])
+        }
+        mentioned |= {
+            f"apps/web/{p}" for p in re.findall(r"\b(src/[\w/.-]+\.tsx?)", failure["output"])
+        }
     sources = {}
     for path in sorted(mentioned)[:8]:
         try:
@@ -396,19 +798,78 @@ async def repair(state: BuildState) -> BuildState:
         except StoreError:
             continue
     request = (
-        "These checks failed:\n" + "\n\n".join(f"## {f['label']}\n{f['output'][-4000:]}" for f in failures)
-        + "\n\nRelevant files:\n" + "\n\n".join(f"### {p}\n```\n{c[:12000]}\n```" for p, c in sources.items())
+        "These checks failed:\n"
+        + "\n\n".join(f"## {f['label']}\n{f['output'][-4000:]}" for f in failures)
+        + "\n\nRelevant files:\n"
+        + "\n\n".join(f"### {p}\n```\n{c[:12000]}\n```" for p, c in sources.items())
         + '\n\nRespond with JSON only: {"files": {"<path>": "<complete corrected file>"}, "explanation": "..."}. '
         "Only change files under apps/web/src, apps/mobile/src, apps/mobile/App.tsx, services/api/app, or packages/api-client/src."
     )
     system = "You are Omniweb's repair agent. Fix the failing checks with the smallest correct change. Never weaken or delete tests."
-    result = await ask_model(state, "repair", system, request, tier=tier, max_tokens=8000)
+    proposal = state.get("aaee_repair")
+    if proposal and proposal.get("stopped"):
+        return {
+            "repair_attempts": attempt,
+            "aaee_repair": None,
+            "outcome": "failed",
+            "message": f"Automatic repair stopped: {proposal['stopped']}",
+            "detail": proposal["stopped"][:500],
+        }
+    if proposal:
+        # AAEE already escalated the previous failed attempt and returned the next patch.
+        result = proposal
+    else:
+        failing = "\n\n".join(f"## {f['label']}\n{f['output'][-4000:]}" for f in failures)
+        result = await ask_model(
+            state,
+            "repair",
+            system,
+            request,
+            tier=tier,
+            max_tokens=8000,
+            engine_task={
+                # AAEE builds its own prompt so its files-array output contract and validation apply.
+                "engine_prompt": False,
+                "description": f"Fix the failing checks with the smallest correct change. Never weaken or delete tests.\n\n{failing}",
+                "input_artifacts": [{"path": p, "content": c} for p, c in sources.items()],
+                "allowed_paths": [
+                    "apps/web/src/",
+                    "apps/mobile/src/",
+                    "apps/mobile/App.tsx",
+                    "services/api/app/",
+                    "packages/api-client/src/",
+                ],
+                "maximum_attempts": max(1, settings.max_repair_attempts),
+                "permitted_actions": ["write_files", "run_validation"],
+            },
+        )
     if not result:
-        return {"repair_attempts": attempt, "outcome": "failed", "message": "Checks failed, and automatic repair needs an AI provider (Settings → AI providers).", "detail": "No model available"}
-    parsed = _parse_edit(result["content"], AppSpec.model_validate(state["spec"]))
-    files = parsed[2] if parsed else {}
+        return {
+            "repair_attempts": attempt,
+            "aaee_repair": None,
+            "outcome": "failed",
+            "message": "Checks failed, and automatic repair needs an AI provider (Settings → AI providers).",
+            "detail": "No model available",
+        }
+    if result.get("files") is not None:
+        files = {}
+        for path, text in result["files"].items():
+            try:
+                path = clean_path(path)
+            except StoreError:
+                continue
+            if AGENT_PATHS.match(path) and isinstance(text, str) and len(text) < 200_000:
+                files[path] = text
+    else:
+        parsed = _parse_edit(result["content"], AppSpec.model_validate(state["spec"]))
+        files = parsed[2] if parsed else {}
     if not files:
-        return {"repair_attempts": attempt, "tier": tier, "detail": "The repair agent did not return a usable patch"}
+        return {
+            "repair_attempts": attempt,
+            "tier": tier,
+            "aaee_repair": None,
+            "detail": "The repair agent did not return a usable patch",
+        }
     for path, content in files.items():
         store.write(path, content)
         store.adopt(path)
@@ -416,10 +877,30 @@ async def repair(state: BuildState) -> BuildState:
     async with SessionLocal() as db:
         project = await _project(db, state)
         if sha:
-            db.add(Checkpoint(project_id=project.id, sha=sha, parent_sha=project.head_sha, message=f"Repair attempt {attempt}", author="agent", run_id=uuid.UUID(state["run_id"]), spec=project.spec, migrations=project.migrations))
+            db.add(
+                Checkpoint(
+                    project_id=project.id,
+                    sha=sha,
+                    parent_sha=project.head_sha,
+                    message=f"Repair attempt {attempt}",
+                    author="agent",
+                    run_id=uuid.UUID(state["run_id"]),
+                    spec=project.spec,
+                    migrations=project.migrations,
+                )
+            )
             project.head_sha = sha
         await db.commit()
-    return {"repair_attempts": attempt, "tier": tier, "commit_sha": sha or state.get("commit_sha"), "detail": f"Patched {len(files)} files ({tier} tier)"}
+    pending = [{**result["aaee"], "files": sorted(files)}] if result.get("aaee") else []
+    how = f"AAEE {result.get('strategy') or 'model'}" if result.get("aaee") else f"{tier} tier"
+    return {
+        "repair_attempts": attempt,
+        "tier": tier,
+        "aaee_pending": pending,
+        "aaee_repair": None,
+        "commit_sha": sha or state.get("commit_sha"),
+        "detail": f"Patched {len(files)} files ({how})",
+    }
 
 
 @node("finalize")
@@ -436,15 +917,28 @@ async def finalize(state: BuildState) -> BuildState:
             await db.commit()
             from pathlib import Path
 
-            published = await preview.publish(settings, project.preview_token, state["commit_sha"], Path(result["build_dir"]), spec.targets)
+            published = await preview.publish(
+                settings,
+                project.preview_token,
+                state["commit_sha"],
+                Path(result["build_dir"]),
+                spec.targets,
+            )
             verify.cleanup(Path(result["build_dir"]))
-        checkpoint = await db.scalar(select(Checkpoint).where(Checkpoint.project_id == project.id, Checkpoint.sha == state.get("commit_sha")))
+        checkpoint = await db.scalar(
+            select(Checkpoint).where(
+                Checkpoint.project_id == project.id, Checkpoint.sha == state.get("commit_sha")
+            )
+        )
         if checkpoint:
             checkpoint.verified = ok
         project.last_build = {
             "ok": ok,
             "sha": state.get("commit_sha"),
-            "steps": [{k: v for k, v in s.items() if k != "output"} | {"output": s["output"][-6000:]} for s in result.get("steps", [])],
+            "steps": [
+                {k: v for k, v in s.items() if k != "output"} | {"output": s["output"][-6000:]}
+                for s in result.get("steps", [])
+            ],
             "failed": result.get("failed", []),
             "unavailable": result.get("unavailable"),
             "preview": published,
@@ -457,7 +951,10 @@ async def finalize(state: BuildState) -> BuildState:
         from pathlib import Path
 
         verify.cleanup(Path(result["build_dir"]))
-    return {"outcome": "succeeded" if ok else "failed", "detail": "Preview published" if published else "Checks did not pass"}
+    return {
+        "outcome": "succeeded" if ok else "failed",
+        "detail": "Preview published" if published else "Checks did not pass",
+    }
 
 
 def route_after_plan(state: BuildState) -> str:
@@ -489,10 +986,20 @@ def build_graph():
     graph.add_node("verify", check)
     graph.add_node("repair", repair)
     graph.add_node("finalize", finalize)
-    graph.add_conditional_edges(START, lambda s: s.get("resume_at") or "understand", ["understand", "plan", "apply", "verify", "repair", "finalize"])
-    graph.add_conditional_edges("understand", lambda s: END if s.get("outcome") in {"no_change", "error"} else "plan", ["plan", END])
+    graph.add_conditional_edges(
+        START,
+        lambda s: s.get("resume_at") or "understand",
+        ["understand", "plan", "apply", "verify", "repair", "finalize"],
+    )
+    graph.add_conditional_edges(
+        "understand",
+        lambda s: END if s.get("outcome") in {"no_change", "error"} else "plan",
+        ["plan", END],
+    )
     graph.add_conditional_edges("plan", route_after_plan, ["apply", END])
-    graph.add_conditional_edges("apply", lambda s: END if s.get("outcome") == "error" else "verify", ["verify", END])
+    graph.add_conditional_edges(
+        "apply", lambda s: END if s.get("outcome") == "error" else "verify", ["verify", END]
+    )
     graph.add_conditional_edges("verify", route_after_verify, ["repair", "finalize", END])
     graph.add_conditional_edges("repair", route_after_repair, ["verify", "finalize"])
     graph.add_edge("finalize", END)
@@ -512,7 +1019,11 @@ def summary_message(state: BuildState) -> str:
     if outcome == "no_change":
         return state.get("message", "Nothing changed.")
     if outcome == "awaiting_approval":
-        return "This change deletes data, so it needs your approval before I continue: " + "; ".join((state.get("migration") or {}).get("destructive_summary", [])) + ". Review it in the banner above the preview."
+        return (
+            "This change deletes data, so it needs your approval before I continue: "
+            + "; ".join((state.get("migration") or {}).get("destructive_summary", []))
+            + ". Review it in the banner above the preview."
+        )
     if outcome == "error":
         return f"The build stopped: {state.get('message', 'unknown error')}"
     result = state.get("verify") or {}
@@ -520,31 +1031,85 @@ def summary_message(state: BuildState) -> str:
     passed = sum(1 for s in steps if s["ok"])
     lines = []
     if state["kind"] == "generate" and spec:
-        targets = {"web": "a React web app", "api": "a FastAPI backend with migrations", "mobile": "an Expo mobile app"}
-        lines.append(f"I built **{spec.name}** — {', '.join(targets[t] for t in spec.targets)}" + (", with email sign-in" if spec.auth else "") + ".")
-        lines.append("Data models: " + ", ".join(f"{e.label} ({len(e.fields)} fields)" for e in spec.entities) + ".")
+        targets = {
+            "web": "a React web app",
+            "api": "a FastAPI backend with migrations",
+            "mobile": "an Expo mobile app",
+        }
+        lines.append(
+            f"I built **{spec.name}** — {', '.join(targets[t] for t in spec.targets)}"
+            + (", with email sign-in" if spec.auth else "")
+            + "."
+        )
+        lines.append(
+            "Data models: "
+            + ", ".join(f"{e.label} ({len(e.fields)} fields)" for e in spec.entities)
+            + "."
+        )
     else:
         lines += [f"- {c}" for c in changes]
     preserved = (state.get("applied") or {}).get("preserved") or []
     if preserved:
-        lines.append(f"I kept your manual edits to {', '.join(preserved[:5])}{' and others' if len(preserved) > 5 else ''}; those files were not regenerated.")
+        lines.append(
+            f"I kept your manual edits to {', '.join(preserved[:5])}{' and others' if len(preserved) > 5 else ''}; those files were not regenerated."
+        )
     if result.get("unavailable"):
         lines.append(f"The code is committed, but nothing was run: {result['unavailable']}")
     elif result.get("ok"):
-        lines.append(f"All {passed} checks passed ({', '.join(s['label'].lower() for s in steps)}). The preview is updated.")
+        lines.append(
+            f"All {passed} checks passed ({', '.join(s['label'].lower() for s in steps)}). The preview is updated."
+        )
     else:
         failed = [s["label"] for s in steps if not s["ok"]]
-        lines.append(f"{passed} of {len(steps)} checks passed. Failing: {', '.join(failed)}. The preview still shows the last working version — see the Logs tab.")
+        lines.append(
+            f"{passed} of {len(steps)} checks passed. Failing: {', '.join(failed)}. The preview still shows the last working version — see the Logs tab."
+        )
         if state.get("message"):
             lines.append(state["message"])
     if not state.get("used_model") and state["kind"] in {"generate", "edit"}:
-        lines.append("_No AI provider is configured, so I used Omniweb's built-in planner. Connect one in Settings for open-ended changes._")
+        lines.append(
+            "_No AI provider is configured, so I used Omniweb's built-in planner. Connect one in Settings for open-ended changes._"
+        )
     return "\n\n".join(lines)
+
+
+async def _close_engine_tasks(state: BuildState) -> None:
+    """Cancels AAEE tasks the run will never validate, so their budget reservations are released."""
+    open_tasks = {e["task_id"] for e in state.get("aaee_pending") or []}
+    if (state.get("aaee_repair") or {}).get("aaee"):
+        open_tasks.add(state["aaee_repair"]["aaee"]["task_id"])
+    if not open_tasks:
+        return
+    settings = get_settings()
+    async with SessionLocal() as db:
+        run = await db.get(GenerationRun, uuid.UUID(state["run_id"]))
+        project = await db.get(Project, uuid.UUID(state["project_id"]))
+        if not run or not project:
+            return
+        principal = _principal(run, project)
+    for task_id in open_tasks:
+        try:
+            await aaee.call(
+                settings,
+                principal,
+                "POST",
+                f"/v1/tasks/{task_id}/cancel",
+                project_id=project.id,
+                service="builder",
+            )
+        except (aaee.Unavailable, HTTPException) as exc:
+            logger.warning("Could not cancel AAEE task %s: %s", task_id, exc)
 
 
 async def _finish(run_id: str, state: BuildState) -> None:
     outcome = state.get("outcome") or "failed"
-    status = {"succeeded": "succeeded", "awaiting_approval": "awaiting_approval", "no_change": "no_change"}.get(outcome, "failed")
+    status = {
+        "succeeded": "succeeded",
+        "awaiting_approval": "awaiting_approval",
+        "no_change": "no_change",
+    }.get(outcome, "failed")
+    if status != "awaiting_approval":
+        await _close_engine_tasks(state)
     async with SessionLocal() as db:
         run = await db.get(GenerationRun, uuid.UUID(run_id))
         project = await db.get(Project, run.project_id) if run else None
@@ -557,12 +1122,19 @@ async def _finish(run_id: str, state: BuildState) -> None:
         run.error = state.get("message") if status == "failed" else None
         if status != "awaiting_approval":
             run.finished_at = now()
-        if status in {"no_change", "awaiting_approval"} and project.generation_status in {"building", "planning"}:
+        if status in {"no_change", "awaiting_approval"} and project.generation_status in {
+            "building",
+            "planning",
+        }:
             project.generation_status = "ready" if project.head_sha else "draft"
         if outcome == "error":
             project.generation_status = "needs_attention" if project.head_sha else "draft"
         if state["kind"] != "verify" or status == "failed":
-            conversation = await db.scalar(select(Conversation).where(Conversation.project_id == project.id).order_by(Conversation.created_at))
+            conversation = await db.scalar(
+                select(Conversation)
+                .where(Conversation.project_id == project.id)
+                .order_by(Conversation.created_at)
+            )
             if conversation:
                 db.add(
                     Message(
@@ -584,7 +1156,13 @@ async def execute(run_id: str) -> None:
         run = await db.get(GenerationRun, uuid.UUID(run_id))
         if not run or run.status not in ACTIVE:
             return
-        state: BuildState = {**(run.state or {}), "run_id": run_id, "project_id": str(run.project_id), "kind": run.kind, "instruction": run.instruction}
+        state: BuildState = {
+            **(run.state or {}),
+            "run_id": run_id,
+            "project_id": str(run.project_id),
+            "kind": run.kind,
+            "instruction": run.instruction,
+        }
         state.pop("outcome", None)
         run.status = "running"
         await db.commit()
@@ -623,14 +1201,29 @@ async def cancel(run_id: uuid.UUID | str) -> bool:
             await task
         except (asyncio.CancelledError, Exception):  # noqa: S110
             pass
+        async with SessionLocal() as db:
+            run = await db.get(GenerationRun, uuid.UUID(str(run_id)))
+            state = dict(run.state or {}) if run else {}
+        if state.get("run_id"):
+            await _close_engine_tasks(state)
         return True
     return False
 
 
-async def create_run(db, project: Project, principal: Principal, kind: str, instruction: str = "", **state: Any) -> GenerationRun:
-    active = await db.scalar(select(GenerationRun).where(GenerationRun.project_id == project.id, GenerationRun.status.in_(ACTIVE | {"awaiting_approval"})))
+async def create_run(
+    db, project: Project, principal: Principal, kind: str, instruction: str = "", **state: Any
+) -> GenerationRun:
+    active = await db.scalar(
+        select(GenerationRun).where(
+            GenerationRun.project_id == project.id,
+            GenerationRun.status.in_(ACTIVE | {"awaiting_approval"}),
+        )
+    )
     if active:
-        raise HTTPException(status_code=409, detail="Another build is in progress or waiting for approval. Wait for it, or cancel it first.")
+        raise HTTPException(
+            status_code=409,
+            detail="Another build is in progress or waiting for approval. Wait for it, or cancel it first.",
+        )
     run = GenerationRun(
         project_id=project.id,
         organization_id=project.organization_id,
@@ -650,7 +1243,12 @@ async def resume_all(settings: Settings) -> None:
     """Restarts runs interrupted by a restart, and the preview APIs of published projects."""
     async with SessionLocal() as db:
         runs = list(await db.scalars(select(GenerationRun).where(GenerationRun.status.in_(ACTIVE))))
-        tokens = [p for p in await db.scalars(select(Project.preview_token).where(Project.preview_token.is_not(None)))]
+        tokens = [
+            p
+            for p in await db.scalars(
+                select(Project.preview_token).where(Project.preview_token.is_not(None))
+            )
+        ]
     for run in runs:
         logger.info("resuming run %s at %s", run.id, (run.state or {}).get("resume_at", "start"))
         launch(run.id)

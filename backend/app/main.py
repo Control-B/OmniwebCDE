@@ -7,14 +7,15 @@ import jwt
 from fastapi import FastAPI, Response, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
-from sqlalchemy import select
+from sqlalchemy import inspect, select, text
 
+from .ai_api import router as ai_router
 from .api import router
 from .builder import pipeline, preview
 from .builder_api import router as builder_router
 from .config import get_settings
 from .database import SessionLocal, engine
-from .models import Base, Membership, Organization, User, Workspace, WorkspaceState
+from .models import ADDED_COLUMNS, Base, Membership, Organization, User, Workspace, WorkspaceState
 from .projects_api import router as projects_router
 from .security import DEV_ORG_ID, DEV_USER_ID, signing_secret
 
@@ -36,11 +37,22 @@ LATENCY = Histogram(
 )
 
 
+def _add_missing_columns(connection) -> None:
+    """Development databases predate some columns; production uses Alembic."""
+    inspector = inspect(connection)
+    for table, columns in ADDED_COLUMNS.items():
+        existing = {c["name"] for c in inspector.get_columns(table)}
+        for name, kind in columns.items():
+            if name not in existing:
+                connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {kind}"))
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     if settings.environment == "development":
         async with engine.begin() as connection:
             await connection.run_sync(Base.metadata.create_all)
+            await connection.run_sync(_add_missing_columns)
         async with SessionLocal() as db:
             if not await db.get(Organization, DEV_ORG_ID):
                 db.add(Organization(id=DEV_ORG_ID, name="Omniweb Labs", slug="omniweb-labs"))
@@ -79,6 +91,8 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type", "Idempotency-Key"],
 )
+# Before `router`: its POST /workspaces/{id}/{action} would otherwise capture /agent-tasks.
+app.include_router(ai_router)
 app.include_router(router)
 app.include_router(projects_router)
 app.include_router(builder_router)
@@ -124,7 +138,9 @@ async def terminal(websocket: WebSocket, workspace_id: uuid.UUID) -> None:
     token = websocket.query_params.get("access_token", "")
     secret = signing_secret(settings)
     try:
-        claims = jwt.decode(token, secret, algorithms=["HS256"], options={"require": ["exp", "sub"]})
+        claims = jwt.decode(
+            token, secret, algorithms=["HS256"], options={"require": ["exp", "sub"]}
+        )
         if claims.get("workspace") != str(workspace_id) or claims.get("kind") != "console":
             raise jwt.InvalidTokenError("Token scope mismatch")
     except jwt.PyJWTError:

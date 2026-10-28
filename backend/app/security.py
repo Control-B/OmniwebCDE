@@ -64,7 +64,9 @@ class TokenClaims:
 def jwks_client(discovery_base: str) -> PyJWKClient:
     # Keycloak and most IdPs publish the JWKS location in the discovery document rather than
     # at a fixed path.
-    discovery = httpx.get(f"{discovery_base.rstrip('/')}/.well-known/openid-configuration", timeout=5)
+    discovery = httpx.get(
+        f"{discovery_base.rstrip('/')}/.well-known/openid-configuration", timeout=5
+    )
     discovery.raise_for_status()
     return PyJWKClient(discovery.json()["jwks_uri"], cache_keys=True)
 
@@ -80,7 +82,9 @@ def decode_oidc(token: str, settings: Settings) -> TokenClaims:
     if not settings.oidc_issuer:
         raise HTTPException(status_code=503, detail="OIDC is not configured")
     try:
-        signing_key = jwks_client(settings.oidc_discovery_url or settings.oidc_issuer).get_signing_key_from_jwt(token)
+        signing_key = jwks_client(
+            settings.oidc_discovery_url or settings.oidc_issuer
+        ).get_signing_key_from_jwt(token)
     except (httpx.HTTPError, KeyError) as exc:
         raise HTTPException(status_code=503, detail="Identity provider unavailable") from exc
     claims = jwt.decode(
@@ -115,7 +119,11 @@ async def resolve_oidc_principal(db: AsyncSession, claims: TokenClaims) -> Princ
         db.add(organization)
     user = await db.scalar(select(User).where(User.oidc_subject == claims.subject))
     if not user:
-        user = User(oidc_subject=claims.subject, email=claims.email, display_name=claims.name or claims.email)
+        user = User(
+            oidc_subject=claims.subject,
+            email=claims.email,
+            display_name=claims.name or claims.email,
+        )
         db.add(user)
         await db.flush()
     else:
@@ -127,7 +135,9 @@ async def resolve_oidc_principal(db: AsyncSession, claims: TokenClaims) -> Princ
         )
     )
     if not membership:
-        db.add(Membership(organization_id=claims.organization_id, user_id=user.id, role=claims.role))
+        db.add(
+            Membership(organization_id=claims.organization_id, user_id=user.id, role=claims.role)
+        )
     else:
         membership.role = claims.role
     await db.commit()

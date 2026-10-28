@@ -28,7 +28,10 @@ MAX_FILE_BYTES = 512_000
 EXCLUDED_EXPORT = {".git", "node_modules", ".preview", "__pycache__", ".pytest_cache", "dist"}
 PROTECTED = re.compile(r"^(\.git/|\.git$|\.omniweb/)")
 SAFE_PATH = re.compile(r"^[A-Za-z0-9_.@/ -]+$")
-AUTHORS = {"agent": ("Omniweb agent", "agent@omniweb.local"), "user": ("Omniweb user", "user@omniweb.local")}
+AUTHORS = {
+    "agent": ("Omniweb agent", "agent@omniweb.local"),
+    "user": ("Omniweb user", "user@omniweb.local"),
+}
 
 
 class StoreError(ValueError):
@@ -50,7 +53,9 @@ def sha256(content: str | bytes) -> str:
 def clean_path(path: str) -> str:
     """Validates a repository-relative path supplied by a person or a model."""
     if not path or len(path) > 300 or "\\" in path or "\x00" in path or not SAFE_PATH.match(path):
-        raise StoreError("Use a relative path with letters, digits, dots, dashes, underscores, and slashes")
+        raise StoreError(
+            "Use a relative path with letters, digits, dots, dashes, underscores, and slashes"
+        )
     posix = PurePosixPath(path)
     if posix.is_absolute() or any(part in {"..", "."} for part in posix.parts):
         raise StoreError("Paths must stay inside the project")
@@ -80,8 +85,25 @@ class ProjectStore:
             "LANG": "C.UTF-8",
         }
 
-    async def git(self, *args: str, check: bool = True, env: dict[str, str] | None = None, input_: bytes | None = None) -> str:
-        argv = ["git", "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", "-c", "core.quotepath=off", "-c", "protocol.file.allow=always", *args]
+    async def git(
+        self,
+        *args: str,
+        check: bool = True,
+        env: dict[str, str] | None = None,
+        input_: bytes | None = None,
+    ) -> str:
+        argv = [
+            "git",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "core.quotepath=off",
+            "-c",
+            "protocol.file.allow=always",
+            *args,
+        ]
         process = await asyncio.create_subprocess_exec(
             *argv,
             cwd=self.repo,
@@ -96,9 +118,23 @@ class ProjectStore:
         return out.decode(errors="replace")
 
     async def git_status(self, *args: str, env: dict[str, str] | None = None) -> tuple[int, str]:
-        argv = ["git", "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", "-c", "protocol.file.allow=always", *args]
+        argv = [
+            "git",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "protocol.file.allow=always",
+            *args,
+        ]
         process = await asyncio.create_subprocess_exec(
-            *argv, cwd=self.repo, env={**self._env(), **(env or {})}, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, stdin=asyncio.subprocess.DEVNULL
+            *argv,
+            cwd=self.repo,
+            env={**self._env(), **(env or {})},
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            stdin=asyncio.subprocess.DEVNULL,
         )
         out, _ = await process.communicate()
         return process.returncode or 0, out.decode(errors="replace")
@@ -124,7 +160,12 @@ class ProjectStore:
         if code == 0 and await self.head():
             return None
         name, email = AUTHORS.get(author, AUTHORS["user"])
-        identity = {"GIT_AUTHOR_NAME": name, "GIT_AUTHOR_EMAIL": email, "GIT_COMMITTER_NAME": "Omniweb", "GIT_COMMITTER_EMAIL": "builder@omniweb.local"}
+        identity = {
+            "GIT_AUTHOR_NAME": name,
+            "GIT_AUTHOR_EMAIL": email,
+            "GIT_COMMITTER_NAME": "Omniweb",
+            "GIT_COMMITTER_EMAIL": "builder@omniweb.local",
+        }
         await self.git("commit", "-q", "--allow-empty", "-m", message[:300], env=identity)
         return await self.head()
 
@@ -150,7 +191,9 @@ class ProjectStore:
 
     def user_modified(self) -> list[str]:
         """Generated files whose content no longer matches what the generator wrote."""
-        return sorted(p for p, h in self.manifest().items() if self._current_hash(p) not in (h, None))
+        return sorted(
+            p for p, h in self.manifest().items() if self._current_hash(p) not in (h, None)
+        )
 
     def apply(self, files: dict[str, str], force: set[str] | None = None) -> ApplyResult:
         """Writes rendered files, keeping any file a person changed since the generator last wrote it."""
@@ -233,13 +276,24 @@ class ProjectStore:
             _, kind, _, size = meta.split()
             if kind != "blob" or path.startswith(".omniweb/"):
                 continue
-            files.append({"path": path, "size": int(size) if size.isdigit() else 0, "generated": path in generated, "modified": path in modified})
+            files.append(
+                {
+                    "path": path,
+                    "size": int(size) if size.isdigit() else 0,
+                    "generated": path in generated,
+                    "modified": path in modified,
+                }
+            )
         return files
 
     def working_files(self) -> list[str]:
         files = []
         for base, dirs, names in os.walk(self.repo):
-            dirs[:] = [d for d in dirs if d not in EXCLUDED_EXPORT and not (base == str(self.repo) and d == ".omniweb")]
+            dirs[:] = [
+                d
+                for d in dirs
+                if d not in EXCLUDED_EXPORT and not (base == str(self.repo) and d == ".omniweb")
+            ]
             for name in names:
                 files.append(str(Path(base, name).relative_to(self.repo)))
         return sorted(files)
@@ -268,11 +322,21 @@ class ProjectStore:
         rows = []
         for line in out.splitlines():
             sha, parents, author, date, subject = line.split("\x1f")
-            rows.append({"sha": sha, "parent": parents.split(" ")[0] if parents else None, "author": author, "date": date, "message": subject})
+            rows.append(
+                {
+                    "sha": sha,
+                    "parent": parents.split(" ")[0] if parents else None,
+                    "author": author,
+                    "date": date,
+                    "message": subject,
+                }
+            )
         return rows
 
     async def diff(self, sha: str, base: str | None = None, max_bytes: int = 200_000) -> dict:
-        if not re.fullmatch(r"[0-9a-f]{7,40}", sha) or (base and not re.fullmatch(r"[0-9a-f]{7,40}", base)):
+        if not re.fullmatch(r"[0-9a-f]{7,40}", sha) or (
+            base and not re.fullmatch(r"[0-9a-f]{7,40}", base)
+        ):
             raise StoreError("Unknown checkpoint")
         if base is None:
             code, parent = await self.git_status("rev-parse", "--verify", "-q", f"{sha}^")
@@ -281,10 +345,24 @@ class ProjectStore:
         files = []
         for line in stat.splitlines():
             added, removed, path = line.split("\t", 2)
-            files.append({"path": path, "added": int(added) if added.isdigit() else 0, "removed": int(removed) if removed.isdigit() else 0})
-        patch = await self.git("diff", "--no-color", "-U3", base, sha, "--", ".", ":(exclude).omniweb")
+            files.append(
+                {
+                    "path": path,
+                    "added": int(added) if added.isdigit() else 0,
+                    "removed": int(removed) if removed.isdigit() else 0,
+                }
+            )
+        patch = await self.git(
+            "diff", "--no-color", "-U3", base, sha, "--", ".", ":(exclude).omniweb"
+        )
         truncated = len(patch) > max_bytes
-        return {"sha": sha, "base": base, "files": files, "patch": patch[:max_bytes], "truncated": truncated}
+        return {
+            "sha": sha,
+            "base": base,
+            "files": files,
+            "patch": patch[:max_bytes],
+            "truncated": truncated,
+        }
 
     async def dirty(self) -> list[str]:
         out = await self.git("status", "--porcelain", "--untracked-files=all")

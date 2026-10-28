@@ -14,6 +14,8 @@ os.environ.setdefault("OMNIWEB_BUILDER_DATA_DIR", str(_scratch / "builder"))
 # Reuse the toolchain installed for local development so tests don't reinstall packages.
 os.environ.setdefault("OMNIWEB_BUILDER_TOOLCHAIN_DIR", str(ROOT / ".omniweb" / "toolchain"))
 os.environ.setdefault("OMNIWEB_MODEL_GATEWAY_URL", "http://127.0.0.1:9")
+# Builder tests use the direct gateway path unless a test runs AAEE in-process (live_aaee).
+os.environ.setdefault("OMNIWEB_AAEE_URL", "http://127.0.0.1:9")
 
 from fastapi.testclient import TestClient  # noqa: E402
 

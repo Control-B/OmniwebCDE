@@ -43,21 +43,47 @@ def steps_for(targets: list[str], root: Path) -> list[Step]:
     if "web" in targets and (root / "apps/web/package.json").exists():
         steps += [
             Step("web.typecheck", "Type-check web app", ["node", TSC, "-p", "apps/web"], "web"),
-            Step("web.test", "Web unit tests", ["sh", "-c", f"cd apps/web && node {VITEST} run"], "web"),
-            Step("web.build", "Build web preview", ["node", PREVIEW, "web", "apps/web", "/mnt/app/.preview/web"], "web"),
+            Step(
+                "web.test",
+                "Web unit tests",
+                ["sh", "-c", f"cd apps/web && node {VITEST} run"],
+                "web",
+            ),
+            Step(
+                "web.build",
+                "Build web preview",
+                ["node", PREVIEW, "web", "apps/web", "/mnt/app/.preview/web"],
+                "web",
+            ),
         ]
     if "api" in targets and (root / "services/api/app/main.py").exists():
         steps += [
-            Step("api.test", "API tests", ["sh", "-c", "cd services/api && python3 -m pytest -q -p no:cacheprovider"], "api"),
+            Step(
+                "api.test",
+                "API tests",
+                ["sh", "-c", "cd services/api && python3 -m pytest -q -p no:cacheprovider"],
+                "api",
+            ),
             Step(
                 "api.migrate",
                 "Apply database migrations",
-                ["sh", "-c", "cd services/api && DATABASE_URL=sqlite:////tmp/verify.db python3 -m alembic upgrade head"],
+                [
+                    "sh",
+                    "-c",
+                    "cd services/api && DATABASE_URL=sqlite:////tmp/verify.db python3 -m alembic upgrade head",
+                ],
                 "api",
             ),
         ]
     if "mobile" in targets and (root / "apps/mobile/package.json").exists():
-        steps.append(Step("mobile.build", "Build mobile preview (React Native Web)", ["node", PREVIEW, "mobile", "apps/mobile", "/mnt/app/.preview/mobile"], "mobile"))
+        steps.append(
+            Step(
+                "mobile.build",
+                "Build mobile preview (React Native Web)",
+                ["node", PREVIEW, "mobile", "apps/mobile", "/mnt/app/.preview/mobile"],
+                "mobile",
+            )
+        )
     return steps
 
 
@@ -65,7 +91,13 @@ def build_dir(settings: Settings, run_id: uuid.UUID | str) -> Path:
     return toolchain.data_dir(settings) / "builds" / str(run_id)
 
 
-async def run_checks(settings: Settings, store: ProjectStore, targets: list[str], run_id: uuid.UUID | str, on_step=None) -> tuple[list[StepResult], Path]:
+async def run_checks(
+    settings: Settings,
+    store: ProjectStore,
+    targets: list[str],
+    run_id: uuid.UUID | str,
+    on_step=None,
+) -> tuple[list[StepResult], Path]:
     """Exports the worktree, runs every check, and returns results plus the build directory."""
     tc = await toolchain.ensure(settings)
     root = store.export(build_dir(settings, run_id))
@@ -77,7 +109,16 @@ async def run_checks(settings: Settings, store: ProjectStore, targets: list[str]
         if on_step:
             await on_step(step, None)
         outcome = await sandbox.run(settings, sandbox.Job(command=step.command, app_dir=root), tc)
-        result = StepResult(step.name, step.label, step.target, outcome.ok, outcome.exit_code, round(outcome.duration, 2), outcome.timed_out, outcome.output[-12_000:])
+        result = StepResult(
+            step.name,
+            step.label,
+            step.target,
+            outcome.ok,
+            outcome.exit_code,
+            round(outcome.duration, 2),
+            outcome.timed_out,
+            outcome.output[-12_000:],
+        )
         results.append(result)
         if on_step:
             await on_step(step, result)

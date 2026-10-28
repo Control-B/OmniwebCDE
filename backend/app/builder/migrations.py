@@ -38,10 +38,21 @@ def plan(previous: AppSpec | None, current: AppSpec, existing: list[dict]) -> di
         old = before[table]
         for name, type_ in columns.items():
             if name not in old:
-                ops.append({"op": "add_column", "table": table, "field": {"name": name, "type": type_}})
+                ops.append(
+                    {"op": "add_column", "table": table, "field": {"name": name, "type": type_}}
+                )
             elif old[name] != type_:
-                ops.append({"op": "drop_column", "table": table, "column": name, "reason": f"type changes from {old[name]} to {type_}"})
-                ops.append({"op": "add_column", "table": table, "field": {"name": name, "type": type_}})
+                ops.append(
+                    {
+                        "op": "drop_column",
+                        "table": table,
+                        "column": name,
+                        "reason": f"type changes from {old[name]} to {type_}",
+                    }
+                )
+                ops.append(
+                    {"op": "add_column", "table": table, "field": {"name": name, "type": type_}}
+                )
         for name in old:
             if name not in columns:
                 ops.append({"op": "drop_column", "table": table, "column": name})
@@ -73,7 +84,10 @@ def _describe(ops: list[dict]) -> str:
         elif kind == "add_column":
             parts.append(f"add {op['table']}.{op['field']['name']}")
         elif kind == "drop_column":
-            parts.append(f"drop {op['table']}.{op['column']}" + (f" ({op['reason']})" if op.get("reason") else ""))
+            parts.append(
+                f"drop {op['table']}.{op['column']}"
+                + (f" ({op['reason']})" if op.get("reason") else "")
+            )
         elif kind == "drop_table":
             parts.append(f"drop table {op['table']} and all its data")
     text = ", ".join(parts)

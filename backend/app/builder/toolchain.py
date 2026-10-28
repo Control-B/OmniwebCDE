@@ -36,7 +36,11 @@ def data_dir(settings: Settings) -> Path:
 
 
 def toolchain_dir(settings: Settings) -> Path:
-    base = Path(settings.builder_toolchain_dir).resolve() if settings.builder_toolchain_dir else data_dir(settings) / "toolchain"
+    base = (
+        Path(settings.builder_toolchain_dir).resolve()
+        if settings.builder_toolchain_dir
+        else data_dir(settings) / "toolchain"
+    )
     return base / version()
 
 
@@ -48,11 +52,19 @@ def node_binary() -> str:
 
 
 async def _run(*args: str, cwd: Path) -> None:
-    env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": os.environ.get("HOME", "/tmp"), "npm_config_update_notifier": "false"}  # noqa: S108
-    process = await asyncio.create_subprocess_exec(*args, cwd=cwd, env=env, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+    env = {
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "HOME": os.environ.get("HOME", "/tmp"),
+        "npm_config_update_notifier": "false",
+    }  # noqa: S108
+    process = await asyncio.create_subprocess_exec(
+        *args, cwd=cwd, env=env, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
+    )
     output, _ = await process.communicate()
     if process.returncode != 0:
-        raise RuntimeError(f"Toolchain step failed: {' '.join(args[:3])}\n{output.decode(errors='replace')[-2000:]}")
+        raise RuntimeError(
+            f"Toolchain step failed: {' '.join(args[:3])}\n{output.decode(errors='replace')[-2000:]}"
+        )
 
 
 async def ensure(settings: Settings) -> Path:
@@ -69,12 +81,31 @@ async def ensure(settings: Settings) -> Path:
         shutil.copy2(SOURCE / "package.json", partial / "package.json")
         shutil.copytree(SOURCE / "scripts", partial / "scripts")
         shutil.copytree(SOURCE / "stubs", partial / "stubs")
-        await _run("npm", "install", "--ignore-scripts", "--no-audit", "--no-fund", "--loglevel=error", cwd=partial)
+        await _run(
+            "npm",
+            "install",
+            "--ignore-scripts",
+            "--no-audit",
+            "--no-fund",
+            "--loglevel=error",
+            cwd=partial,
+        )
         (partial / "bin").mkdir()
         shutil.copy2(node_binary(), partial / "bin" / "node")
         await _run(
-            sys.executable, "-m", "pip", "install", "--quiet", "--no-warn-script-location", "--disable-pip-version-check",
-            "--break-system-packages", "--target", str(partial / "python"), "-r", str(SOURCE / "requirements.txt"), cwd=partial,
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--quiet",
+            "--no-warn-script-location",
+            "--disable-pip-version-check",
+            "--break-system-packages",
+            "--target",
+            str(partial / "python"),
+            "-r",
+            str(SOURCE / "requirements.txt"),
+            cwd=partial,
         )
         if target.exists():
             shutil.rmtree(target)

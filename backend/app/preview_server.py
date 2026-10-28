@@ -24,7 +24,20 @@ settings = get_settings()
 app = FastAPI(title="Omniweb preview", docs_url=None, redoc_url=None, openapi_url=None)
 TOKEN = re.compile(r"^[0-9a-f]{16}$")
 HOST = re.compile(r"^([0-9a-f]{16})\.preview\.")
-HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers", "transfer-encoding", "upgrade", "host", "cookie", "set-cookie", "content-length"}
+HOP = {
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailers",
+    "transfer-encoding",
+    "upgrade",
+    "host",
+    "cookie",
+    "set-cookie",
+    "content-length",
+}
 MAX_BODY = 5_000_000
 BRIDGE = (Path(__file__).parent / "builder" / "assets" / "preview-bridge.js").read_text()
 
@@ -106,23 +119,47 @@ async def serve(request: Request, rest: str) -> Response:
 
 def inject(html: str, prefix: str, kind: str) -> str:
     origins = json.dumps(settings.allowed_frontend_origins).replace("'", "&#39;")
-    tag = f"<script src=\"{prefix}/__omniweb/bridge.js\" data-origins='{origins}' data-kind=\"{kind}\"></script>"
+    tag = f'<script src="{prefix}/__omniweb/bridge.js" data-origins=\'{origins}\' data-kind="{kind}"></script>'
     return html.replace("</head>", tag + "</head>", 1) if "</head>" in html else tag + html
 
 
 async def proxy(request: Request, token: str, path: str) -> Response:
     socket = preview.run_dir(settings, token) / "api.sock"
     if not socket.exists():
-        return harden(Response(json.dumps({"detail": "This app's API is not running. Rebuild the project to start it."}), status_code=503, media_type="application/json"))
+        return harden(
+            Response(
+                json.dumps(
+                    {"detail": "This app's API is not running. Rebuild the project to start it."}
+                ),
+                status_code=503,
+                media_type="application/json",
+            )
+        )
     body = await request.body()
     if len(body) > MAX_BODY:
         return harden(PlainTextResponse("Request too large", status_code=413))
     headers = {k: v for k, v in request.headers.items() if k.lower() not in HOP}
     transport = httpx.AsyncHTTPTransport(uds=str(socket))
     try:
-        async with httpx.AsyncClient(transport=transport, base_url="http://preview-api", timeout=30) as client:
-            upstream = await client.request(request.method, path, params=request.query_params, content=body, headers=headers)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://preview-api", timeout=30
+        ) as client:
+            upstream = await client.request(
+                request.method, path, params=request.query_params, content=body, headers=headers
+            )
     except httpx.HTTPError:
-        return harden(Response(json.dumps({"detail": "This app's API did not respond"}), status_code=502, media_type="application/json"))
-    response_headers = {k: v for k, v in upstream.headers.items() if k.lower() not in HOP and k.lower() != "content-encoding"}
-    return harden(Response(upstream.content, status_code=upstream.status_code, headers=response_headers))
+        return harden(
+            Response(
+                json.dumps({"detail": "This app's API did not respond"}),
+                status_code=502,
+                media_type="application/json",
+            )
+        )
+    response_headers = {
+        k: v
+        for k, v in upstream.headers.items()
+        if k.lower() not in HOP and k.lower() != "content-encoding"
+    }
+    return harden(
+        Response(upstream.content, status_code=upstream.status_code, headers=response_headers)
+    )

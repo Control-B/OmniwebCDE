@@ -56,8 +56,7 @@ class CoderAdapter:
         ttl_ms: int,
     ) -> dict[str, Any]:
         response = await self.client.post(
-            f"/api/v2/organizations/{coder_organization_id}/members/"
-            f"{coder_user_id}/workspaces",
+            f"/api/v2/organizations/{coder_organization_id}/members/{coder_user_id}/workspaces",
             json={
                 "name": name,
                 "template_id": template_id,

@@ -42,7 +42,9 @@ def oidc(monkeypatch):
             "exp": now + timedelta(minutes=5),
         }
         claims.update(overrides)
-        return jwt.encode({k: v for k, v in claims.items() if v is not None}, private_key, algorithm="RS256")
+        return jwt.encode(
+            {k: v for k, v in claims.items() if v is not None}, private_key, algorithm="RS256"
+        )
 
     return issue
 
@@ -53,14 +55,24 @@ def test_oidc_users_are_persisted_with_highest_realm_role(oidc):
         first = client.get("/api/v1/me", headers={"Authorization": f"Bearer {token}"})
         assert first.status_code == 200, first.text
         body = first.json()
-        assert body["auth_mode"] == "oidc" and body["role"] == "admin" and body["display_name"] == "Jordan Lee"
+        assert (
+            body["auth_mode"] == "oidc"
+            and body["role"] == "admin"
+            and body["display_name"] == "Jordan Lee"
+        )
         again = client.get("/api/v1/me", headers={"Authorization": f"Bearer {token}"}).json()
         assert again["user_id"] == body["user_id"]
-        project = client.post("/api/v1/projects", json={"prompt": "OIDC user project"}, headers={"Authorization": f"Bearer {token}"})
+        project = client.post(
+            "/api/v1/projects",
+            json={"prompt": "OIDC user project"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
         assert project.status_code == 201
 
 
-@pytest.mark.parametrize("override", [{"aud": "someone-else"}, {"iss": "https://evil.test"}, {"org_id": None}])
+@pytest.mark.parametrize(
+    "override", [{"aud": "someone-else"}, {"iss": "https://evil.test"}, {"org_id": None}]
+)
 def test_tokens_with_wrong_audience_issuer_or_tenant_are_rejected(oidc, override):
     with TestClient(app) as client:
         response = client.get("/api/v1/me", headers={"Authorization": f"Bearer {oidc(**override)}"})

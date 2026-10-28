@@ -34,10 +34,19 @@ from .services import gateway
 router = APIRouter(prefix="/api/v1")
 
 TEMPLATES = {
-    "react-web": {"label": "Web application", "stack": ["React", "TypeScript", "Vite", "Tailwind CSS", "Vitest"]},
-    "fastapi-backend": {"label": "Backend API", "stack": ["FastAPI", "PostgreSQL", "SQLAlchemy", "Alembic", "OpenAPI", "pytest"]},
+    "react-web": {
+        "label": "Web application",
+        "stack": ["React", "TypeScript", "Vite", "Tailwind CSS", "Vitest"],
+    },
+    "fastapi-backend": {
+        "label": "Backend API",
+        "stack": ["FastAPI", "PostgreSQL", "SQLAlchemy", "Alembic", "OpenAPI", "pytest"],
+    },
     "expo-mobile": {"label": "Mobile application", "stack": ["React Native", "Expo", "TypeScript"]},
-    "full-stack": {"label": "Full-stack application", "stack": ["React", "Vite", "FastAPI", "PostgreSQL", "Alembic", "Typed API client"]},
+    "full-stack": {
+        "label": "Full-stack application",
+        "stack": ["React", "Vite", "FastAPI", "PostgreSQL", "Alembic", "Typed API client"],
+    },
 }
 REQUIREMENTS_SYSTEM_PROMPT = (
     "You are Omniweb's requirements assistant. Help the user define the application they want to build. "
@@ -105,7 +114,12 @@ def derive_name(prompt: str) -> str:
     called = re.search(r"\b(?:called|named)\s+([A-Z][\w&' -]{1,40})", prompt)
     if called:
         return called.group(1).strip()
-    subject = re.sub(r"^(build|create|make|generate)\s+(me\s+)?(an?|the)\s+", "", prompt.strip(), flags=re.IGNORECASE)
+    subject = re.sub(
+        r"^(build|create|make|generate)\s+(me\s+)?(an?|the)\s+",
+        "",
+        prompt.strip(),
+        flags=re.IGNORECASE,
+    )
     words = re.split(r"\s+(?:with|that|for|which|where)\s+", subject, maxsplit=1)[0].split()[:5]
     name = " ".join(words).strip(" .,") or "Untitled project"
     return name[:1].upper() + name[1:80]
@@ -114,15 +128,24 @@ def derive_name(prompt: str) -> str:
 def infer_template(prompt: str) -> str:
     text = prompt.lower()
     mobile = bool(re.search(r"\b(mobile|ios|android|expo|react native)\b", text))
-    backend = bool(re.search(r"\b(database|backend|api|login|auth|accounts?|payments?|users?|roles?|dashboard)\b", text))
+    backend = bool(
+        re.search(
+            r"\b(database|backend|api|login|auth|accounts?|payments?|users?|roles?|dashboard)\b",
+            text,
+        )
+    )
     if mobile or backend:
         return "full-stack"
     return "react-web"
 
 
-async def project_access(db: AsyncSession, project_id: uuid.UUID, principal: Principal, write: bool = False) -> tuple[Project, str]:
+async def project_access(
+    db: AsyncSession, project_id: uuid.UUID, principal: Principal, write: bool = False
+) -> tuple[Project, str]:
     project = await db.scalar(
-        select(Project).where(Project.id == project_id, Project.organization_id == principal.organization_id)
+        select(Project).where(
+            Project.id == project_id, Project.organization_id == principal.organization_id
+        )
     )
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -130,7 +153,9 @@ async def project_access(db: AsyncSession, project_id: uuid.UUID, principal: Pri
         role = "owner"
     else:
         role = await db.scalar(
-            select(ProjectMember.role).where(ProjectMember.project_id == project.id, ProjectMember.user_id == principal.user_id)
+            select(ProjectMember.role).where(
+                ProjectMember.project_id == project.id, ProjectMember.user_id == principal.user_id
+            )
         )
         if not role:
             raise HTTPException(status_code=404, detail="Project not found")
@@ -142,7 +167,9 @@ async def project_access(db: AsyncSession, project_id: uuid.UUID, principal: Pri
 async def project_view(db: AsyncSession, project: Project, role: str) -> dict:
     stats = (
         await db.execute(
-            select(func.coalesce(func.sum(Message.cost_usd), 0.0), func.count(Message.id)).where(Message.project_id == project.id)
+            select(func.coalesce(func.sum(Message.cost_usd), 0.0), func.count(Message.id)).where(
+                Message.project_id == project.id
+            )
         )
     ).one()
     return {
@@ -167,7 +194,9 @@ async def project_view(db: AsyncSession, project: Project, role: str) -> dict:
     }
 
 
-def audit(db: AsyncSession, principal: Principal, action: str, target_type: str, target_id: str) -> None:
+def audit(
+    db: AsyncSession, principal: Principal, action: str, target_type: str, target_id: str
+) -> None:
     db.add(
         AuditEvent(
             organization_id=principal.organization_id,
@@ -192,21 +221,35 @@ async def templates(_: Principal = Depends(get_principal)) -> list[dict]:
 
 
 @router.get("/projects")
-async def list_projects(db: AsyncSession = Depends(get_db), principal: Principal = Depends(get_principal)) -> list[dict]:
+async def list_projects(
+    db: AsyncSession = Depends(get_db), principal: Principal = Depends(get_principal)
+) -> list[dict]:
     query = select(Project).where(Project.organization_id == principal.organization_id)
     if principal.role not in {"owner", "admin"}:
-        query = query.join(ProjectMember, ProjectMember.project_id == Project.id).where(ProjectMember.user_id == principal.user_id)
+        query = query.join(ProjectMember, ProjectMember.project_id == Project.id).where(
+            ProjectMember.user_id == principal.user_id
+        )
     projects = list(await db.scalars(query.order_by(Project.updated_at.desc())))
     roles = {}
     if principal.role not in {"owner", "admin"}:
         roles = dict(
-            (await db.execute(select(ProjectMember.project_id, ProjectMember.role).where(ProjectMember.user_id == principal.user_id))).all()
+            (
+                await db.execute(
+                    select(ProjectMember.project_id, ProjectMember.role).where(
+                        ProjectMember.user_id == principal.user_id
+                    )
+                )
+            ).all()
         )
     return [await project_view(db, p, roles.get(p.id, "owner")) for p in projects]
 
 
 @router.post("/projects", status_code=status.HTTP_201_CREATED)
-async def create_project(data: ProjectCreate, db: AsyncSession = Depends(get_db), principal: Principal = Depends(get_principal)) -> dict:
+async def create_project(
+    data: ProjectCreate,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_principal),
+) -> dict:
     if principal.role == "viewer":
         raise HTTPException(status_code=403, detail="Viewers cannot create projects")
     await ensure_user(db, principal)
@@ -231,14 +274,21 @@ async def create_project(data: ProjectCreate, db: AsyncSession = Depends(get_db)
 
 
 @router.get("/projects/{project_id}")
-async def get_project(project_id: uuid.UUID, db: AsyncSession = Depends(get_db), principal: Principal = Depends(get_principal)) -> dict:
+async def get_project(
+    project_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_principal),
+) -> dict:
     project, role = await project_access(db, project_id, principal)
     return await project_view(db, project, role)
 
 
 @router.patch("/projects/{project_id}")
 async def update_project(
-    project_id: uuid.UUID, data: ProjectUpdate, db: AsyncSession = Depends(get_db), principal: Principal = Depends(get_principal)
+    project_id: uuid.UUID,
+    data: ProjectUpdate,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_principal),
 ) -> dict:
     project, role = await project_access(db, project_id, principal, write=True)
     if data.name is not None:
@@ -272,11 +322,32 @@ async def delete_project(
         raise HTTPException(status_code=403, detail="Only project owners can delete a project")
     if confirm_name != project.name:
         raise HTTPException(status_code=422, detail="Type the project name to confirm deletion")
-    if await db.scalar(select(Deployment.id).where(Deployment.project_id == project.id, Deployment.status.in_(["live", "deploying"]))):
-        raise HTTPException(status_code=409, detail="This project has live deployments. Remove the App Platform app from your DigitalOcean account first.")
-    for active in await db.scalars(select(GenerationRun.id).where(GenerationRun.project_id == project.id, GenerationRun.status.in_(["queued", "running"]))):
+    if await db.scalar(
+        select(Deployment.id).where(
+            Deployment.project_id == project.id, Deployment.status.in_(["live", "deploying"])
+        )
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="This project has live deployments. Remove the App Platform app from your DigitalOcean account first.",
+        )
+    for active in await db.scalars(
+        select(GenerationRun.id).where(
+            GenerationRun.project_id == project.id, GenerationRun.status.in_(["queued", "running"])
+        )
+    ):
         await pipeline.cancel(active)
-    for model in (Deployment, Approval, Checkpoint, GenerationRun, Message, AgentExecution, ProjectEnvVar, Conversation, ProjectMember):
+    for model in (
+        Deployment,
+        Approval,
+        Checkpoint,
+        GenerationRun,
+        Message,
+        AgentExecution,
+        ProjectEnvVar,
+        Conversation,
+        ProjectMember,
+    ):
         for row in await db.scalars(select(model).where(model.project_id == project.id)):
             await db.delete(row)
         await db.flush()
@@ -307,9 +378,15 @@ def message_view(message: Message) -> dict:
 
 
 @router.get("/projects/{project_id}/messages")
-async def list_messages(project_id: uuid.UUID, db: AsyncSession = Depends(get_db), principal: Principal = Depends(get_principal)) -> list[dict]:
+async def list_messages(
+    project_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_principal),
+) -> list[dict]:
     project, _ = await project_access(db, project_id, principal)
-    messages = await db.scalars(select(Message).where(Message.project_id == project.id).order_by(Message.created_at))
+    messages = await db.scalars(
+        select(Message).where(Message.project_id == project.id).order_by(Message.created_at)
+    )
     return [message_view(m) for m in messages]
 
 
@@ -322,13 +399,22 @@ async def send_message(
     settings: Settings = Depends(get_settings),
 ) -> dict:
     project, _ = await project_access(db, project_id, principal, write=True)
-    conversation = await db.scalar(select(Conversation).where(Conversation.project_id == project.id).order_by(Conversation.created_at))
+    conversation = await db.scalar(
+        select(Conversation)
+        .where(Conversation.project_id == project.id)
+        .order_by(Conversation.created_at)
+    )
     if not conversation:
         conversation = Conversation(project_id=project.id, organization_id=project.organization_id)
         db.add(conversation)
         await db.flush()
     history = list(
-        await db.scalars(select(Message).where(Message.conversation_id == conversation.id).order_by(Message.created_at.desc()).limit(20))
+        await db.scalars(
+            select(Message)
+            .where(Message.conversation_id == conversation.id)
+            .order_by(Message.created_at.desc())
+            .limit(20)
+        )
     )[::-1]
     user_message = Message(
         conversation_id=conversation.id,
@@ -356,7 +442,11 @@ async def send_message(
     payload = {
         "messages": [
             {"role": "system", "content": REQUIREMENTS_SYSTEM_PROMPT},
-            *({"role": m.role, "content": m.content} for m in history if m.role in {"user", "assistant"}),
+            *(
+                {"role": m.role, "content": m.content}
+                for m in history
+                if m.role in {"user", "assistant"}
+            ),
             {"role": "user", "content": data.content},
         ],
         "agent": "requirements",
@@ -366,10 +456,16 @@ async def send_message(
     if data.tier:
         payload["tier"] = data.tier
     try:
-        result = await gateway.call(settings, principal, "POST", "/v1/chat", project_id=project.id, json=payload)
+        result = await gateway.call(
+            settings, principal, "POST", "/v1/chat", project_id=project.id, json=payload
+        )
     except HTTPException as exc:
         execution.status = "cancelled" if exc.status_code == 499 else "failed"
-        detail = exc.detail if isinstance(exc.detail, str) else exc.detail.get("message", "Model request failed")
+        detail = (
+            exc.detail
+            if isinstance(exc.detail, str)
+            else exc.detail.get("message", "Model request failed")
+        )
         execution.detail = str(detail)[:500]
         execution.attempts = exc.detail.get("attempts", []) if isinstance(exc.detail, dict) else []
         execution.finished_at = datetime.now(UTC)
@@ -419,18 +515,29 @@ async def cancel_request(
 ) -> dict:
     project, _ = await project_access(db, project_id, principal, write=True)
     owned = await db.scalar(
-        select(AgentExecution.id).where(AgentExecution.project_id == project.id, AgentExecution.request_id == request_id)
+        select(AgentExecution.id).where(
+            AgentExecution.project_id == project.id, AgentExecution.request_id == request_id
+        )
     )
     if not owned:
         raise HTTPException(status_code=404, detail="Request not found")
-    return await gateway.call(settings, principal, "POST", f"/v1/requests/{request_id}/cancel", project_id=project.id)
+    return await gateway.call(
+        settings, principal, "POST", f"/v1/requests/{request_id}/cancel", project_id=project.id
+    )
 
 
 @router.get("/projects/{project_id}/executions")
-async def list_executions(project_id: uuid.UUID, db: AsyncSession = Depends(get_db), principal: Principal = Depends(get_principal)) -> list[dict]:
+async def list_executions(
+    project_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_principal),
+) -> list[dict]:
     project, _ = await project_access(db, project_id, principal)
     rows = await db.scalars(
-        select(AgentExecution).where(AgentExecution.project_id == project.id).order_by(AgentExecution.started_at.desc()).limit(50)
+        select(AgentExecution)
+        .where(AgentExecution.project_id == project.id)
+        .order_by(AgentExecution.started_at.desc())
+        .limit(50)
     )
     return [
         {
@@ -442,6 +549,9 @@ async def list_executions(project_id: uuid.UUID, db: AsyncSession = Depends(get_
             "cost_usd": r.cost_usd,
             "detail": r.detail,
             "attempts": r.attempts,
+            "aaee_task_id": r.aaee_task_id,
+            "strategy": r.strategy,
+            "phase": r.phase,
             "started_at": r.started_at.isoformat(),
             "finished_at": r.finished_at.isoformat() if r.finished_at else None,
         }
@@ -451,7 +561,10 @@ async def list_executions(project_id: uuid.UUID, db: AsyncSession = Depends(get_
 
 @router.get("/projects/{project_id}/usage")
 async def project_usage(
-    project_id: uuid.UUID, db: AsyncSession = Depends(get_db), principal: Principal = Depends(get_principal), settings: Settings = Depends(get_settings)
+    project_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_principal),
+    settings: Settings = Depends(get_settings),
 ) -> dict:
     project, _ = await project_access(db, project_id, principal)
     return await gateway.call(settings, principal, "GET", "/v1/usage", project_id=project.id)
@@ -470,12 +583,22 @@ async def project_budget(
         raise HTTPException(status_code=403, detail="Only project owners can change the budget")
     audit(db, principal, "project.budget.update", "project", str(project.id))
     await db.commit()
-    return await gateway.call(settings, principal, "PUT", "/v1/budgets", project_id=project.id, json={"scope": "project", **data.model_dump()})
+    return await gateway.call(
+        settings,
+        principal,
+        "PUT",
+        "/v1/budgets",
+        project_id=project.id,
+        json={"scope": "project", **data.model_dump()},
+    )
 
 
 @router.get("/projects/{project_id}/model-preferences")
 async def get_project_preferences(
-    project_id: uuid.UUID, db: AsyncSession = Depends(get_db), principal: Principal = Depends(get_principal), settings: Settings = Depends(get_settings)
+    project_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_principal),
+    settings: Settings = Depends(get_settings),
 ) -> dict:
     project, _ = await project_access(db, project_id, principal)
     return await gateway.call(settings, principal, "GET", "/v1/preferences", project_id=project.id)
@@ -490,24 +613,40 @@ async def put_project_preferences(
     settings: Settings = Depends(get_settings),
 ) -> dict:
     project, _ = await project_access(db, project_id, principal, write=True)
-    return await gateway.call(settings, principal, "PUT", "/v1/preferences", project_id=project.id, json=data.model_dump())
+    return await gateway.call(
+        settings, principal, "PUT", "/v1/preferences", project_id=project.id, json=data.model_dump()
+    )
 
 
 @router.get("/projects/{project_id}/members")
-async def list_members(project_id: uuid.UUID, db: AsyncSession = Depends(get_db), principal: Principal = Depends(get_principal)) -> list[dict]:
+async def list_members(
+    project_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_principal),
+) -> list[dict]:
     project, _ = await project_access(db, project_id, principal)
     rows = await db.execute(
-        select(ProjectMember, User).join(User, User.id == ProjectMember.user_id).where(ProjectMember.project_id == project.id)
+        select(ProjectMember, User)
+        .join(User, User.id == ProjectMember.user_id)
+        .where(ProjectMember.project_id == project.id)
     )
     return [
-        {"user_id": str(user.id), "email": user.email, "display_name": user.display_name, "role": member.role}
+        {
+            "user_id": str(user.id),
+            "email": user.email,
+            "display_name": user.display_name,
+            "role": member.role,
+        }
         for member, user in rows.all()
     ]
 
 
 @router.post("/projects/{project_id}/members", status_code=status.HTTP_201_CREATED)
 async def add_member(
-    project_id: uuid.UUID, data: MemberCreate, db: AsyncSession = Depends(get_db), principal: Principal = Depends(get_principal)
+    project_id: uuid.UUID,
+    data: MemberCreate,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_principal),
 ) -> dict:
     project, role = await project_access(db, project_id, principal, write=True)
     if role != "owner":
@@ -515,29 +654,50 @@ async def add_member(
     user = await db.scalar(
         select(User)
         .join(Membership, Membership.user_id == User.id)
-        .where(func.lower(User.email) == data.email.lower(), Membership.organization_id == principal.organization_id)
+        .where(
+            func.lower(User.email) == data.email.lower(),
+            Membership.organization_id == principal.organization_id,
+        )
     )
     if not user:
-        raise HTTPException(status_code=404, detail="No one in your organization has that email address")
-    existing = await db.scalar(select(ProjectMember).where(ProjectMember.project_id == project.id, ProjectMember.user_id == user.id))
+        raise HTTPException(
+            status_code=404, detail="No one in your organization has that email address"
+        )
+    existing = await db.scalar(
+        select(ProjectMember).where(
+            ProjectMember.project_id == project.id, ProjectMember.user_id == user.id
+        )
+    )
     if existing:
         raise HTTPException(status_code=409, detail="That person is already a collaborator")
     db.add(ProjectMember(project_id=project.id, user_id=user.id, role=data.role))
     audit(db, principal, "project.member.add", "project", str(project.id))
     await db.commit()
-    return {"user_id": str(user.id), "email": user.email, "display_name": user.display_name, "role": data.role}
+    return {
+        "user_id": str(user.id),
+        "email": user.email,
+        "display_name": user.display_name,
+        "role": data.role,
+    }
 
 
 @router.delete("/projects/{project_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_member(
-    project_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSession = Depends(get_db), principal: Principal = Depends(get_principal)
+    project_id: uuid.UUID,
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_principal),
 ) -> Response:
     project, role = await project_access(db, project_id, principal, write=True)
     if role != "owner":
         raise HTTPException(status_code=403, detail="Only project owners can manage collaborators")
     if user_id == project.owner_id:
         raise HTTPException(status_code=409, detail="The project owner cannot be removed")
-    member = await db.scalar(select(ProjectMember).where(ProjectMember.project_id == project.id, ProjectMember.user_id == user_id))
+    member = await db.scalar(
+        select(ProjectMember).where(
+            ProjectMember.project_id == project.id, ProjectMember.user_id == user_id
+        )
+    )
     if not member:
         raise HTTPException(status_code=404, detail="Collaborator not found")
     await db.delete(member)
@@ -547,11 +707,22 @@ async def remove_member(
 
 
 @router.get("/projects/{project_id}/env")
-async def list_env(project_id: uuid.UUID, db: AsyncSession = Depends(get_db), principal: Principal = Depends(get_principal)) -> list[dict]:
+async def list_env(
+    project_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_principal),
+) -> list[dict]:
     project, _ = await project_access(db, project_id, principal)
-    rows = await db.scalars(select(ProjectEnvVar).where(ProjectEnvVar.project_id == project.id).order_by(ProjectEnvVar.key))
+    rows = await db.scalars(
+        select(ProjectEnvVar)
+        .where(ProjectEnvVar.project_id == project.id)
+        .order_by(ProjectEnvVar.key)
+    )
     # Values are write-only: they are decrypted only when injected into an approved runtime.
-    return [{"key": r.key, "environment": r.environment, "updated_at": r.updated_at.isoformat()} for r in rows]
+    return [
+        {"key": r.key, "environment": r.environment, "updated_at": r.updated_at.isoformat()}
+        for r in rows
+    ]
 
 
 @router.put("/projects/{project_id}/env")
@@ -564,27 +735,51 @@ async def put_env(
 ) -> dict:
     project, _ = await project_access(db, project_id, principal, write=True)
     if not ENV_KEY.match(data.key):
-        raise HTTPException(status_code=422, detail="Use upper-case letters, digits, and underscores, starting with a letter")
+        raise HTTPException(
+            status_code=422,
+            detail="Use upper-case letters, digits, and underscores, starting with a letter",
+        )
     row = await db.scalar(
         select(ProjectEnvVar).where(
-            ProjectEnvVar.project_id == project.id, ProjectEnvVar.environment == data.environment, ProjectEnvVar.key == data.key
+            ProjectEnvVar.project_id == project.id,
+            ProjectEnvVar.environment == data.environment,
+            ProjectEnvVar.key == data.key,
         )
-    ) or ProjectEnvVar(project_id=project.id, organization_id=project.organization_id, environment=data.environment, key=data.key)
+    ) or ProjectEnvVar(
+        project_id=project.id,
+        organization_id=project.organization_id,
+        environment=data.environment,
+        key=data.key,
+    )
     row.encrypted_value = encrypt_secret(data.value.get_secret_value(), settings)
     row.updated_at = datetime.now(UTC)
     db.add(row)
     audit(db, principal, "project.env.update", "project", str(project.id))
     await db.commit()
-    return {"key": row.key, "environment": row.environment, "updated_at": row.updated_at.isoformat()}
+    return {
+        "key": row.key,
+        "environment": row.environment,
+        "updated_at": row.updated_at.isoformat(),
+    }
 
 
-@router.delete("/projects/{project_id}/env/{environment}/{key}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/projects/{project_id}/env/{environment}/{key}", status_code=status.HTTP_204_NO_CONTENT
+)
 async def delete_env(
-    project_id: uuid.UUID, environment: str, key: str, db: AsyncSession = Depends(get_db), principal: Principal = Depends(get_principal)
+    project_id: uuid.UUID,
+    environment: str,
+    key: str,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_principal),
 ) -> Response:
     project, _ = await project_access(db, project_id, principal, write=True)
     row = await db.scalar(
-        select(ProjectEnvVar).where(ProjectEnvVar.project_id == project.id, ProjectEnvVar.environment == environment, ProjectEnvVar.key == key)
+        select(ProjectEnvVar).where(
+            ProjectEnvVar.project_id == project.id,
+            ProjectEnvVar.environment == environment,
+            ProjectEnvVar.key == key,
+        )
     )
     if not row:
         raise HTTPException(status_code=404, detail="Variable not found")
@@ -595,7 +790,9 @@ async def delete_env(
 
 
 @router.get("/ai/providers")
-async def ai_providers(principal: Principal = Depends(get_principal), settings: Settings = Depends(get_settings)) -> list:
+async def ai_providers(
+    principal: Principal = Depends(get_principal), settings: Settings = Depends(get_settings)
+) -> list:
     return await gateway.call(settings, principal, "GET", "/v1/providers")
 
 
@@ -607,8 +804,13 @@ async def ai_put_credential(
     principal: Principal = Depends(require_admin),
     settings: Settings = Depends(get_settings),
 ) -> dict:
-    body = {"base_url": data.base_url, "api_key": data.api_key.get_secret_value() if data.api_key else None}
-    result = await gateway.call(settings, principal, "PUT", f"/v1/credentials/{provider}", json=body)
+    body = {
+        "base_url": data.base_url,
+        "api_key": data.api_key.get_secret_value() if data.api_key else None,
+    }
+    result = await gateway.call(
+        settings, principal, "PUT", f"/v1/credentials/{provider}", json=body
+    )
     audit(db, principal, "ai.credential.update", "provider", provider)
     await db.commit()
     return result
@@ -616,7 +818,10 @@ async def ai_put_credential(
 
 @router.delete("/ai/credentials/{provider}", status_code=status.HTTP_204_NO_CONTENT)
 async def ai_delete_credential(
-    provider: str, db: AsyncSession = Depends(get_db), principal: Principal = Depends(require_admin), settings: Settings = Depends(get_settings)
+    provider: str,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(require_admin),
+    settings: Settings = Depends(get_settings),
 ) -> Response:
     await gateway.call(settings, principal, "DELETE", f"/v1/credentials/{provider}")
     audit(db, principal, "ai.credential.delete", "provider", provider)
@@ -625,13 +830,18 @@ async def ai_delete_credential(
 
 
 @router.post("/ai/registry/refresh")
-async def ai_refresh(principal: Principal = Depends(require_admin), settings: Settings = Depends(get_settings)) -> dict:
+async def ai_refresh(
+    principal: Principal = Depends(require_admin), settings: Settings = Depends(get_settings)
+) -> dict:
     return await gateway.call(settings, principal, "POST", "/v1/registry/refresh", timeout=60)
 
 
 @router.get("/ai/models")
 async def ai_models(
-    provider: str | None = None, routable_only: bool = False, principal: Principal = Depends(get_principal), settings: Settings = Depends(get_settings)
+    provider: str | None = None,
+    routable_only: bool = False,
+    principal: Principal = Depends(get_principal),
+    settings: Settings = Depends(get_settings),
 ) -> list:
     params = {"routable_only": str(routable_only).lower()}
     if provider:
@@ -640,25 +850,45 @@ async def ai_models(
 
 
 @router.get("/ai/tiers")
-async def ai_tiers(principal: Principal = Depends(get_principal), settings: Settings = Depends(get_settings)) -> list:
+async def ai_tiers(
+    principal: Principal = Depends(get_principal), settings: Settings = Depends(get_settings)
+) -> list:
     return await gateway.call(settings, principal, "GET", "/v1/tiers")
 
 
 @router.get("/ai/usage")
-async def ai_usage(principal: Principal = Depends(get_principal), settings: Settings = Depends(get_settings)) -> dict:
+async def ai_usage(
+    principal: Principal = Depends(get_principal), settings: Settings = Depends(get_settings)
+) -> dict:
     return await gateway.call(settings, principal, "GET", "/v1/usage")
 
 
 @router.put("/ai/budget")
-async def ai_budget(data: BudgetInput, principal: Principal = Depends(require_admin), settings: Settings = Depends(get_settings)) -> dict:
-    return await gateway.call(settings, principal, "PUT", "/v1/budgets", json={"scope": "organization_monthly", **data.model_dump()})
+async def ai_budget(
+    data: BudgetInput,
+    principal: Principal = Depends(require_admin),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    return await gateway.call(
+        settings,
+        principal,
+        "PUT",
+        "/v1/budgets",
+        json={"scope": "organization_monthly", **data.model_dump()},
+    )
 
 
 @router.get("/ai/preferences")
-async def ai_get_preferences(principal: Principal = Depends(get_principal), settings: Settings = Depends(get_settings)) -> dict:
+async def ai_get_preferences(
+    principal: Principal = Depends(get_principal), settings: Settings = Depends(get_settings)
+) -> dict:
     return await gateway.call(settings, principal, "GET", "/v1/preferences")
 
 
 @router.put("/ai/preferences")
-async def ai_put_preferences(data: PreferenceInput, principal: Principal = Depends(require_admin), settings: Settings = Depends(get_settings)) -> dict:
+async def ai_put_preferences(
+    data: PreferenceInput,
+    principal: Principal = Depends(require_admin),
+    settings: Settings = Depends(get_settings),
+) -> dict:
     return await gateway.call(settings, principal, "PUT", "/v1/preferences", json=data.model_dump())

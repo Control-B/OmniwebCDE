@@ -135,7 +135,9 @@ class DigitalOceanAdapter:
 
     # -- App Platform (generated-app deployments) -------------------------------------------
 
-    async def upsert_app(self, spec: dict[str, Any], app_id: str | None = None) -> tuple[str, str | None]:
+    async def upsert_app(
+        self, spec: dict[str, Any], app_id: str | None = None
+    ) -> tuple[str, str | None]:
         """Creates or updates an App Platform app. Returns (app id, deployment id)."""
         spec = copy.deepcopy(spec)
         if self.settings.mock_infrastructure:
@@ -152,7 +154,9 @@ class DigitalOceanAdapter:
             for env in component.get("envs", []):
                 if env.get("type") == "SECRET" and not env.get("value"):
                     # App Platform encrypts SECRET values; reuse the stored ciphertext on updates.
-                    env["value"] = existing.get(f"{component['name']}:{env['key']}") or secrets.token_urlsafe(32)
+                    env["value"] = existing.get(
+                        f"{component['name']}:{env['key']}"
+                    ) or secrets.token_urlsafe(32)
         if app_id:
             response = await self.client.put(f"/apps/{app_id}", json={"spec": spec})
         else:
@@ -164,18 +168,28 @@ class DigitalOceanAdapter:
 
     async def app_deployment(self, app_id: str, deployment_id: str) -> dict[str, Any]:
         if self.settings.mock_infrastructure:
-            return {"id": deployment_id, "phase": "ACTIVE", "live_url": f"https://{app_id.removeprefix('mock-app-')}.mock.ondigitalocean.app"}
+            return {
+                "id": deployment_id,
+                "phase": "ACTIVE",
+                "live_url": f"https://{app_id.removeprefix('mock-app-')}.mock.ondigitalocean.app",
+            }
         response = await self.client.get(f"/apps/{app_id}/deployments/{deployment_id}")
         self._raise(response)
         deployment = response.json()["deployment"]
         app = await self.client.get(f"/apps/{app_id}")
         self._raise(app)
-        return {"id": deployment["id"], "phase": deployment.get("phase"), "live_url": app.json()["app"].get("live_url")}
+        return {
+            "id": deployment["id"],
+            "phase": deployment.get("phase"),
+            "live_url": app.json()["app"].get("live_url"),
+        }
 
     async def rollback_app(self, app_id: str, deployment_id: str) -> str:
         if self.settings.mock_infrastructure:
             return f"mock-rollback-{deployment_id}"
-        response = await self.client.post(f"/apps/{app_id}/rollback", json={"deployment_id": deployment_id, "skip_pin": False})
+        response = await self.client.post(
+            f"/apps/{app_id}/rollback", json={"deployment_id": deployment_id, "skip_pin": False}
+        )
         self._raise(response)
         return str(response.json()["deployment"]["id"])
 

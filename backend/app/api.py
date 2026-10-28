@@ -205,20 +205,28 @@ async def lifecycle(
 ) -> Workspace:
     workspace = await tenant_workspace(db, workspace_id, principal)
     if action == "stop":
-        await transition(db, workspace, WorkspaceState.STOPPING, "Stop requested", principal.user_id)
+        await transition(
+            db, workspace, WorkspaceState.STOPPING, "Stop requested", principal.user_id
+        )
         await transition(db, workspace, WorkspaceState.STOPPED, "Workspace stopped")
     elif action == "start":
-        await transition(db, workspace, WorkspaceState.STARTING, "Start requested", principal.user_id)
+        await transition(
+            db, workspace, WorkspaceState.STARTING, "Start requested", principal.user_id
+        )
         await transition(db, workspace, WorkspaceState.CONNECTING, "Waiting for workspace agent")
         await transition(db, workspace, WorkspaceState.READY, "Workspace agent connected")
     elif action == "restart":
-        await transition(db, workspace, WorkspaceState.STOPPING, "Restart requested", principal.user_id)
+        await transition(
+            db, workspace, WorkspaceState.STOPPING, "Restart requested", principal.user_id
+        )
         await transition(db, workspace, WorkspaceState.STOPPED, "Workspace stopped")
         await transition(db, workspace, WorkspaceState.STARTING, "Restarting workspace")
         await transition(db, workspace, WorkspaceState.CONNECTING, "Waiting for workspace agent")
         await transition(db, workspace, WorkspaceState.READY, "Workspace agent connected")
     elif action == "delete":
-        await transition(db, workspace, WorkspaceState.DELETING, "Deletion approved", principal.user_id)
+        await transition(
+            db, workspace, WorkspaceState.DELETING, "Deletion approved", principal.user_id
+        )
         connection = await db.get(CloudConnection, workspace.cloud_connection_id)
         if connection and workspace.external_resource_id:
             from .security import decrypt_secret
@@ -277,4 +285,6 @@ async def access(
         raise HTTPException(status_code=409, detail="Workspace is not ready")
     token = _access_token(workspace, principal, settings, kind)
     # This token is short-lived and scoped to one workspace and access mode.
-    return AccessLink(url=f"/{kind}/{workspace.id}?access_token={token}", expires_in_seconds=300, kind=kind)
+    return AccessLink(
+        url=f"/{kind}/{workspace.id}?access_token={token}", expires_in_seconds=300, kind=kind
+    )

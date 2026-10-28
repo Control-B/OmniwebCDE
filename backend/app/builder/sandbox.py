@@ -22,7 +22,22 @@ from pathlib import Path
 from ..config import Settings
 from .toolchain import data_dir
 
-HIDDEN = ["/home", "/root", "/run", "/var/run", "/tmp", "/var/tmp", "/workspace", "/cursor", "/opt", "/exec-daemon", "/srv", "/var/lib", "/var/log", "/media"]  # noqa: S108  guest paths inside the sandbox
+HIDDEN = [
+    "/home",
+    "/root",
+    "/run",
+    "/var/run",
+    "/tmp",
+    "/var/tmp",
+    "/workspace",
+    "/cursor",
+    "/opt",
+    "/exec-daemon",
+    "/srv",
+    "/var/lib",
+    "/var/log",
+    "/media",
+]  # noqa: S108  guest paths inside the sandbox
 SECRET_PATTERN = re.compile(
     r"(sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|dop_v1_[a-f0-9]{20,}"
     r"|Bearer\s+[A-Za-z0-9._-]{16,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)"
@@ -103,11 +118,43 @@ def guest_env(job: Job) -> dict[str, str]:
     }
 
 
-def _namespace_argv(settings: Settings, job: Job, toolchain: Path) -> tuple[list[str], dict[str, str]]:
+def _namespace_argv(
+    settings: Settings, job: Job, toolchain: Path
+) -> tuple[list[str], dict[str, str]]:
     hidden = HIDDEN + [str(data_dir(settings))]
-    limits = ["/usr/bin/prlimit", "--cpu=900", "--fsize=1073741824", "--nofile=4096", "--core=0", "--"]
-    inner = ["/usr/bin/env", "-i", *[f"{k}={v}" for k, v in guest_env(job).items()], *limits, *job.command]
-    argv = ["unshare", "--user", "--map-root-user", "--mount", "--pid", "--fork", "--kill-child", "--mount-proc", "--net", "--ipc", "--uts", "sh", "-c", SCRIPT, "sandbox", *inner]
+    limits = [
+        "/usr/bin/prlimit",
+        "--cpu=900",
+        "--fsize=1073741824",
+        "--nofile=4096",
+        "--core=0",
+        "--",
+    ]
+    inner = [
+        "/usr/bin/env",
+        "-i",
+        *[f"{k}={v}" for k, v in guest_env(job).items()],
+        *limits,
+        *job.command,
+    ]
+    argv = [
+        "unshare",
+        "--user",
+        "--map-root-user",
+        "--mount",
+        "--pid",
+        "--fork",
+        "--kill-child",
+        "--mount-proc",
+        "--net",
+        "--ipc",
+        "--uts",
+        "sh",
+        "-c",
+        SCRIPT,
+        "sandbox",
+        *inner,
+    ]
     host_env = {
         "PATH": "/usr/bin:/bin",
         "OW_APP": str(job.app_dir),
@@ -118,17 +165,44 @@ def _namespace_argv(settings: Settings, job: Job, toolchain: Path) -> tuple[list
     return argv, host_env
 
 
-def _container_argv(settings: Settings, job: Job, toolchain: Path) -> tuple[list[str], dict[str, str]]:
+def _container_argv(
+    settings: Settings, job: Job, toolchain: Path
+) -> tuple[list[str], dict[str, str]]:
     argv = [
-        "docker", "run", "--rm", "--network", "none", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
-        "--pids-limit", "512", "--memory", "2g", "--cpus", "2", "--user", "10001:10001", "--tmpfs", "/tmp:size=1g",  # noqa: S108  guest paths inside the sandbox
-        "-v", f"{job.app_dir}:/mnt/app", "-v", f"{toolchain}:/mnt/toolchain:ro", "-w", "/mnt/app",
+        "docker",
+        "run",
+        "--rm",
+        "--network",
+        "none",
+        "--read-only",
+        "--cap-drop",
+        "ALL",
+        "--security-opt",
+        "no-new-privileges",
+        "--pids-limit",
+        "512",
+        "--memory",
+        "2g",
+        "--cpus",
+        "2",
+        "--user",
+        "10001:10001",
+        "--tmpfs",
+        "/tmp:size=1g",  # noqa: S108  guest paths inside the sandbox
+        "-v",
+        f"{job.app_dir}:/mnt/app",
+        "-v",
+        f"{toolchain}:/mnt/toolchain:ro",
+        "-w",
+        "/mnt/app",
     ]
     if job.run_dir:
         argv += ["-v", f"{job.run_dir}:/mnt/run"]
     for key, value in guest_env(job).items():
         argv += ["-e", f"{key}={value}"]
-    return [*argv, settings.sandbox_image, *job.command], {"PATH": os.environ.get("PATH", "/usr/bin:/bin")}
+    return [*argv, settings.sandbox_image, *job.command], {
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin")
+    }
 
 
 def argv_for(settings: Settings, job: Job, toolchain: Path) -> tuple[list[str], dict[str, str]]:
@@ -136,7 +210,9 @@ def argv_for(settings: Settings, job: Job, toolchain: Path) -> tuple[list[str], 
         raise SandboxUnavailable("Code execution is disabled (OMNIWEB_SANDBOX_MODE=disabled)")
     if settings.sandbox_mode == "container":
         if not shutil.which("docker"):
-            raise SandboxUnavailable("OMNIWEB_SANDBOX_MODE=container needs a container runtime on the build host")
+            raise SandboxUnavailable(
+                "OMNIWEB_SANDBOX_MODE=container needs a container runtime on the build host"
+            )
         return _container_argv(settings, job, toolchain)
     if not shutil.which("unshare"):
         raise SandboxUnavailable("Namespace sandboxing needs util-linux unshare")
@@ -147,7 +223,12 @@ async def run(settings: Settings, job: Job, toolchain: Path) -> SandboxResult:
     argv, host_env = argv_for(settings, job, toolchain)
     started = time.monotonic()
     process = await asyncio.create_subprocess_exec(
-        *argv, env=host_env, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, stdin=asyncio.subprocess.DEVNULL, start_new_session=True
+        *argv,
+        env=host_env,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+        stdin=asyncio.subprocess.DEVNULL,
+        start_new_session=True,
     )
     chunks: list[bytes] = []
     size = 0
@@ -163,7 +244,10 @@ async def run(settings: Settings, job: Job, toolchain: Path) -> SandboxResult:
 
     timed_out = False
     try:
-        await asyncio.wait_for(asyncio.gather(pump(), process.wait()), timeout=job.timeout or settings.sandbox_timeout_seconds)
+        await asyncio.wait_for(
+            asyncio.gather(pump(), process.wait()),
+            timeout=job.timeout or settings.sandbox_timeout_seconds,
+        )
     except TimeoutError:
         timed_out = True
         kill(process)
@@ -172,15 +256,29 @@ async def run(settings: Settings, job: Job, toolchain: Path) -> SandboxResult:
         kill(process)
         raise
     output = b"".join(chunks).decode(errors="replace")[-MAX_OUTPUT:]
-    return SandboxResult(process.returncode if process.returncode is not None else -1, redact(output, job.secrets), time.monotonic() - started, timed_out)
+    return SandboxResult(
+        process.returncode if process.returncode is not None else -1,
+        redact(output, job.secrets),
+        time.monotonic() - started,
+        timed_out,
+    )
 
 
-async def spawn(settings: Settings, job: Job, toolchain: Path, log_path: Path) -> asyncio.subprocess.Process:
+async def spawn(
+    settings: Settings, job: Job, toolchain: Path, log_path: Path
+) -> asyncio.subprocess.Process:
     """Starts a long-running sandboxed process, such as a preview API server."""
     argv, host_env = argv_for(settings, job, toolchain)
     log = log_path.open("ab")
     try:
-        return await asyncio.create_subprocess_exec(*argv, env=host_env, stdout=log, stderr=asyncio.subprocess.STDOUT, stdin=asyncio.subprocess.DEVNULL, start_new_session=True)
+        return await asyncio.create_subprocess_exec(
+            *argv,
+            env=host_env,
+            stdout=log,
+            stderr=asyncio.subprocess.STDOUT,
+            stdin=asyncio.subprocess.DEVNULL,
+            start_new_session=True,
+        )
     finally:
         log.close()
 

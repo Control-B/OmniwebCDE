@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     encryption_key: str = ""
     model_gateway_url: str = "http://127.0.0.1:8020"
     model_gateway_secret: str = Field(default="", repr=False)
+    # Adaptive AI Execution Engine. When it is unreachable the builder calls the gateway directly.
+    aaee_url: str = "http://127.0.0.1:8030"
+    aaee_secret: str = Field(default="", repr=False)
+    aaee_enabled: bool = True
+    # User IDs or emails allowed to manage platform-wide routing policy and pricing.
+    platform_admins: str = ""
     digitalocean_base_url: str = "https://api.digitalocean.com/v2"
     coder_base_url: str = "http://coder:7080"
     coder_access_url: str = "http://coder.localhost"

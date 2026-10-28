@@ -172,7 +172,9 @@ class GenerationRun(Base):
 
     __tablename__ = "generation_runs"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), index=True
+    )
     organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
     requested_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     kind: Mapped[str] = mapped_column(String(24))
@@ -193,12 +195,16 @@ class Checkpoint(Base):
     __tablename__ = "checkpoints"
     __table_args__ = (UniqueConstraint("project_id", "sha"),)
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), index=True
+    )
     sha: Mapped[str] = mapped_column(String(40))
     parent_sha: Mapped[str | None] = mapped_column(String(40))
     message: Mapped[str] = mapped_column(String(300))
     author: Mapped[str] = mapped_column(String(16))
-    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("generation_runs.id", ondelete="SET NULL"))
+    run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("generation_runs.id", ondelete="SET NULL")
+    )
     restores_sha: Mapped[str | None] = mapped_column(String(40))
     action: Mapped[str] = mapped_column(String(16), default="change")
     undo_of: Mapped[str | None] = mapped_column(String(40))
@@ -213,14 +219,18 @@ class Approval(Base):
 
     __tablename__ = "approvals"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), index=True
+    )
     organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
     kind: Mapped[str] = mapped_column(String(32))
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
     summary: Mapped[str] = mapped_column(String(300))
     details: Mapped[dict] = mapped_column(JSON, default=dict)
     estimated_monthly_usd: Mapped[float | None] = mapped_column(Float)
-    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("generation_runs.id", ondelete="SET NULL"))
+    run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("generation_runs.id", ondelete="SET NULL")
+    )
     requested_by: Mapped[str] = mapped_column(String(64))
     decided_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -230,7 +240,9 @@ class Approval(Base):
 class Deployment(Base):
     __tablename__ = "deployments"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), index=True
+    )
     organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
     environment: Mapped[str] = mapped_column(String(16))
     cloud_connection_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("cloud_connections.id"))
@@ -254,7 +266,9 @@ class ProjectMember(Base):
     __tablename__ = "project_members"
     __table_args__ = (UniqueConstraint("project_id", "user_id"),)
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), index=True
+    )
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     role: Mapped[str] = mapped_column(String(16), default="editor")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
@@ -263,7 +277,9 @@ class ProjectMember(Base):
 class Conversation(Base):
     __tablename__ = "conversations"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), index=True
+    )
     organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
     title: Mapped[str] = mapped_column(String(120), default="Main")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
@@ -272,8 +288,12 @@ class Conversation(Base):
 class Message(Base):
     __tablename__ = "messages"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    conversation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"), index=True)
-    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"), index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), index=True
+    )
     organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
     author_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     role: Mapped[str] = mapped_column(String(16))
@@ -292,7 +312,9 @@ class Message(Base):
 class AgentExecution(Base):
     __tablename__ = "agent_executions"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), index=True
+    )
     organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
     agent: Mapped[str] = mapped_column(String(64))
     stage: Mapped[str] = mapped_column(String(32))
@@ -302,15 +324,56 @@ class AgentExecution(Base):
     cost_usd: Mapped[float] = mapped_column(Float, default=0)
     detail: Mapped[str | None] = mapped_column(String(500))
     attempts: Mapped[list] = mapped_column(JSON, default=list)
+    aaee_task_id: Mapped[str | None] = mapped_column(String(40), index=True)
+    strategy: Mapped[str | None] = mapped_column(String(24))
+    phase: Mapped[str | None] = mapped_column(String(24))
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class WorkspaceAgentTask(Base):
+    """An AI task for a CDE workspace. AAEE proposes file edits; the user reviews and applies them.
+
+    The model never runs commands in the workspace and never receives workspace credentials.
+    """
+
+    __tablename__ = "workspace_agent_tasks"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    requested_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    aaee_task_id: Mapped[str | None] = mapped_column(String(40), index=True)
+    task_type: Mapped[str] = mapped_column(String(40))
+    instruction: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(24), default="queued")
+    strategy: Mapped[str | None] = mapped_column(String(24))
+    model: Mapped[str | None] = mapped_column(String(240))
+    phase: Mapped[str | None] = mapped_column(String(24))
+    cost_usd: Mapped[float] = mapped_column(Float, default=0)
+    proposal: Mapped[dict] = mapped_column(JSON, default=dict)
+    detail: Mapped[str | None] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+ADDED_COLUMNS = {
+    "agent_executions": {
+        "aaee_task_id": "VARCHAR(40)",
+        "strategy": "VARCHAR(24)",
+        "phase": "VARCHAR(24)",
+    }
+}
 
 
 class ProjectEnvVar(Base):
     __tablename__ = "project_env_vars"
     __table_args__ = (UniqueConstraint("project_id", "environment", "key"),)
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), index=True
+    )
     organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
     environment: Mapped[str] = mapped_column(String(16), default="development")
     key: Mapped[str] = mapped_column(String(128))

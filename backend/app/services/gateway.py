@@ -21,7 +21,9 @@ def gateway_secret(settings: Settings) -> str:
     return DEV_GATEWAY_SECRET
 
 
-def service_token(settings: Settings, principal: Principal, project_id: uuid.UUID | None = None) -> str:
+def service_token(
+    settings: Settings, principal: Principal, project_id: uuid.UUID | None = None
+) -> str:
     issued = datetime.now(UTC)
     claims: dict[str, Any] = {
         "aud": AUDIENCE,
@@ -49,7 +51,9 @@ async def call(
 ) -> Any:
     headers = {"Authorization": f"Bearer {service_token(settings, principal, project_id)}"}
     try:
-        async with httpx.AsyncClient(base_url=settings.model_gateway_url, timeout=timeout) as client:
+        async with httpx.AsyncClient(
+            base_url=settings.model_gateway_url, timeout=timeout
+        ) as client:
             response = await client.request(method, path, headers=headers, json=json, params=params)
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=503, detail="The model gateway is unavailable") from exc
@@ -60,5 +64,7 @@ async def call(
     except ValueError:
         payload = {"detail": "Unexpected gateway response"}
     if response.status_code >= 400:
-        raise HTTPException(status_code=response.status_code, detail=payload.get("detail", "Gateway error"))
+        raise HTTPException(
+            status_code=response.status_code, detail=payload.get("detail", "Gateway error")
+        )
     return payload

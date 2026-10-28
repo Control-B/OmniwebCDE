@@ -115,9 +115,13 @@ async def create_workspace(
         sizes = await provider.sizes(data.region)
         selected = next((item for item in sizes if item.slug == data.size and item.available), None)
         if not selected:
-            raise HTTPException(status_code=422, detail="Selected size is unavailable in this region")
+            raise HTTPException(
+                status_code=422, detail="Selected size is unavailable in this region"
+            )
         if abs(selected.monthly_usd - data.approved_estimated_monthly_usd) > Decimal("0.01"):
-            raise HTTPException(status_code=409, detail="Price changed; review and approve the new estimate")
+            raise HTTPException(
+                status_code=409, detail="Price changed; review and approve the new estimate"
+            )
 
         workspace = Workspace(
             organization_id=principal.organization_id,
@@ -185,7 +189,9 @@ async def create_workspace(
 async def summary(db: AsyncSession, principal: Principal) -> DashboardSummary:
     rows = (
         await db.execute(
-            select(Workspace.state, func.count(Workspace.id), func.sum(Workspace.estimated_monthly_usd))
+            select(
+                Workspace.state, func.count(Workspace.id), func.sum(Workspace.estimated_monthly_usd)
+            )
             .where(
                 Workspace.organization_id == principal.organization_id,
                 Workspace.state != WorkspaceState.DELETED,
