@@ -1,0 +1,30 @@
+{
+  "realm": "omniweb",
+  "enabled": true,
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "sslRequired": "external",
+  "roles": {
+    "realm": [
+      { "name": "owner" },
+      { "name": "admin" },
+      { "name": "member" },
+      { "name": "viewer" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "omniweb-web",
+      "name": "Omniweb Web",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["http://localhost:43210/*"],
+      "webOrigins": ["http://localhost:43210"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      }
+    }
+  ]
+}

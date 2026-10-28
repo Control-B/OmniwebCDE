@@ -1,0 +1,33 @@
+name: security
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: returntocorp/semgrep-action@v1
+        with:
+          config: p/owasp-top-ten
+
+  containers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build API
+        run: docker build -t omniweb-api:test backend
+      - uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: omniweb-api:test
+          severity: HIGH,CRITICAL
+          exit-code: "1"

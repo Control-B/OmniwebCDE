@@ -1,0 +1,25 @@
+# Dependencies and build output
+node_modules/
+.output/
+dist/
+.vite/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+
+# Local state and secrets
+.env
+.env.*
+!.env.example
+*.db
+*.sqlite*
+.terraform/
+*.tfstate*
+
+# Runtime and agent artifacts
+agent-tools/
+terminals/
+.DS_Store
+coverage/

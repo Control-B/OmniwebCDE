@@ -1,0 +1,107 @@
+name: omniweb-cde
+
+services:
+  postgres:
+    image: postgres:17.6-alpine
+    environment:
+      POSTGRES_USER: omniweb
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-development-only}
+      POSTGRES_DB: omniweb
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infrastructure/docker/init-databases.sql:/docker-entrypoint-initdb.d/01-databases.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U omniweb"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  redis:
+    image: redis:8.2-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  temporal:
+    image: temporalio/auto-setup:1.28.1
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: omniweb
+      POSTGRES_PWD: ${POSTGRES_PASSWORD:-local-development-only}
+      POSTGRES_SEEDS: postgres
+      DBNAME: temporal
+      VISIBILITY_DBNAME: temporal_visibility
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  temporal-ui:
+    image: temporalio/ui:2.42.1
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+    depends_on:
+      - temporal
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4.2
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-local-admin-only}
+    volumes:
+      - ./infrastructure/identity/omniweb-realm.json:/opt/keycloak/data/import/omniweb-realm.json:ro
+
+  coder:
+    image: ghcr.io/coder/coder:v2.26.3
+    environment:
+      CODER_ACCESS_URL: ${CODER_ACCESS_URL:-http://coder.localhost}
+      CODER_HTTP_ADDRESS: 0.0.0.0:7080
+      CODER_PG_CONNECTION_URL: postgresql://omniweb:${POSTGRES_PASSWORD:-local-development-only}@postgres:5432/coder?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  api:
+    build:
+      context: ./backend
+    environment:
+      OMNIWEB_ENVIRONMENT: development
+      OMNIWEB_DATABASE_URL: postgresql+asyncpg://omniweb:${POSTGRES_PASSWORD:-local-development-only}@postgres:5432/omniweb
+      OMNIWEB_FRONTEND_ORIGIN: http://localhost:43210
+      OMNIWEB_CODER_BASE_URL: http://coder:7080
+      OMNIWEB_MOCK_INFRASTRUCTURE: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./frontend
+    environment:
+      VITE_API_URL: http://localhost:8010
+    depends_on:
+      - api
+
+  caddy:
+    image: caddy:2.10.2-alpine
+    ports:
+      - "${OMNIWEB_HTTP_PORT:-8088}:80"
+    volumes:
+      - ./infrastructure/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - web
+      - api
+
+volumes:
+  postgres-data:
+  redis-data:

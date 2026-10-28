@@ -1,0 +1,38 @@
+#cloud-config
+package_update: true
+packages:
+  - ca-certificates
+  - curl
+  - git
+  - jq
+  - ripgrep
+  - tmux
+  - python3
+  - python3-venv
+
+users:
+  - name: developer
+    groups: [sudo]
+    shell: /bin/bash
+    lock_passwd: true
+    sudo: ["ALL=(ALL) NOPASSWD:ALL"]
+
+ssh_pwauth: false
+disable_root: true
+
+write_files:
+  - path: /etc/ssh/sshd_config.d/99-omniweb.conf
+    permissions: "0644"
+    content: |
+      PasswordAuthentication no
+      PermitRootLogin no
+  - path: /usr/local/sbin/start-coder-agent
+    owner: root:developer
+    permissions: "0750"
+    encoding: b64
+    content: ${init_script}
+
+runcmd:
+  - install -d -o developer -g developer -m 0750 /workspace/project
+  - systemctl restart ssh
+  - su - developer -c '/usr/local/sbin/start-coder-agent'
