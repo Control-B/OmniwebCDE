@@ -25,3 +25,7 @@ terminals/
 .DS_Store
 coverage/
 gateway.db
+
+# Playwright
+frontend/test-results/
+frontend/playwright-report/
