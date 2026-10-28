@@ -2,6 +2,9 @@ FROM node:22.21.1-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
+ARG VITE_API_URL
+ARG VITE_OIDC_ISSUER
+ENV VITE_API_URL=$VITE_API_URL VITE_OIDC_ISSUER=$VITE_OIDC_ISSUER
 COPY . .
 RUN npm run build
 

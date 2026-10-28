@@ -51,6 +51,8 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:26.4.2
     command: ["start-dev", "--import-realm"]
+    ports:
+      - "${KEYCLOAK_PORT:-8180}:8080"
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-local-admin-only}
@@ -79,17 +81,45 @@ services:
       OMNIWEB_CODER_BASE_URL: http://coder:7080
       OMNIWEB_CODER_ACCESS_URL: http://coder.localhost
       OMNIWEB_MOCK_INFRASTRUCTURE: "true"
+      OMNIWEB_MODEL_GATEWAY_URL: http://model-gateway:8020
+      OMNIWEB_MODEL_GATEWAY_SECRET: ${MODEL_GATEWAY_SECRET:-local-development-gateway-secret-change-me}
+      # Leave OMNIWEB_OIDC_ISSUER empty to use the local development identity. To sign in through
+      # Keycloak, set it to http://localhost:8180/realms/omniweb (the issuer browsers see).
+      OMNIWEB_OIDC_ISSUER: ${OMNIWEB_OIDC_ISSUER:-}
+      OMNIWEB_OIDC_DISCOVERY_URL: http://keycloak:8080/realms/omniweb
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      model-gateway:
+        condition: service_started
+
+  model-gateway:
+    build:
+      context: ./services/model-gateway
+    environment:
+      GATEWAY_ENVIRONMENT: development
+      GATEWAY_DATABASE_URL: postgresql+asyncpg://omniweb:${POSTGRES_PASSWORD:-local-development-only}@postgres:5432/model_gateway
+      GATEWAY_SERVICE_SECRET: ${MODEL_GATEWAY_SECRET:-local-development-gateway-secret-change-me}
+      GATEWAY_ENCRYPTION_KEY: ${MODEL_GATEWAY_ENCRYPTION_KEY:-}
+      GATEWAY_MOCK_MODE: "true"
+      # Platform-managed provider keys. Leave empty to rely on customer keys or the development model.
+      GATEWAY_OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GATEWAY_ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GATEWAY_GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GATEWAY_OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      GATEWAY_OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   web:
     build:
       context: ./frontend
-    environment:
-      VITE_API_URL: http://localhost:8010
+      args:
+        VITE_API_URL: http://localhost:8010
+        VITE_OIDC_ISSUER: ${OMNIWEB_OIDC_ISSUER:-}
     depends_on:
       - api
 

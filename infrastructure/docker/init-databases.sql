@@ -1,3 +1,4 @@
 CREATE DATABASE temporal;
 CREATE DATABASE temporal_visibility;
 CREATE DATABASE coder;
+CREATE DATABASE model_gateway;
