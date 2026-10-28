@@ -1,7 +1,7 @@
 import pytest
 
-from app.config import get_settings
 from app.builder.store import StoreError
+from app.config import get_settings
 from app.services.agent_loop import ToolDenied, WorkspaceTools
 
 
