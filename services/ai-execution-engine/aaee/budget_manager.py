@@ -84,7 +84,10 @@ async def _counter(db: AsyncSession, scope: str, scope_id: str, period: str, loc
 async def _limit(db: AsyncSession, scope: str, scope_id: str, task: Task, settings: Settings) -> tuple[float, bool, float]:
     if scope == "task":
         return task.spec["maximum_budget_usd"] + task.overage_approved_usd, True, settings.alert_threshold
-    override = await db.scalar(select(Budget).where(Budget.scope == scope, Budget.scope_id.in_([scope_id, "default"])).order_by(Budget.scope_id == "default"))
+    owner = Budget.tenant_id.is_(None) if scope == "platform" else Budget.tenant_id == task.tenant_id
+    override = await db.scalar(
+        select(Budget).where(Budget.scope == scope, Budget.scope_id.in_([scope_id, "default"]), owner).order_by(Budget.scope_id == "default").limit(1)
+    )
     if override:
         return override.limit_usd, override.hard_limit, override.alert_threshold
     default = settings.platform_monthly_budget_usd if scope == "platform" else settings.user_monthly_budget_usd

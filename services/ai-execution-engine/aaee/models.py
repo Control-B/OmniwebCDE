@@ -149,7 +149,7 @@ class Budget(Base):
     limits are read from the model gateway."""
 
     __tablename__ = "budgets"
-    __table_args__ = (UniqueConstraint("scope", "scope_id"),)
+    __table_args__ = (UniqueConstraint("tenant_id", "scope", "scope_id"),)
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID | None] = mapped_column(index=True)
     scope: Mapped[str] = mapped_column(String(24))  # platform | user | task_default | execution_ceiling

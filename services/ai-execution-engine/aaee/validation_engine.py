@@ -206,6 +206,11 @@ def engine_checks(spec: TaskSpec, settings: Settings, content: str | None, files
     items = []
     if content is not None and not files:
         items.append(check_response_schema(spec, content))
+        if spec.task_type in CODE_OUTPUT_TASKS and files is None:
+            # Content-only output (for example a specification with embedded patches): the
+            # mandatory gates still apply, to the response text and to an empty file set.
+            items.append(check_paths(spec, {}))
+            items.append(scan_secrets({"response.txt": content}, settings))
     if files is not None:
         items.append(check_paths(spec, files))
         items.append(scan_secrets(files, settings))

@@ -337,6 +337,12 @@ def plan(spec: TaskSpec, models: list[ModelView], policy: dict, stats: Stats, ct
     }
     if not chosen:
         result["warnings"].append("No automated strategy is eligible; a person must handle or approve this task")
+    # The "always use the strongest eligible hosted model" reference point for savings reports.
+    # It is an estimate from the same token model, not a measured counterfactual.
+    hosted = [c for c in candidates if c.strategy == "hosted_model"]
+    if hosted:
+        strongest = max(hosted, key=lambda c: (LEVELS.get(c.level_name, 0), c.expected_cost_usd))
+        result["baseline"] = {"key": strongest.key, "expected_cost_usd": round(strongest.expected_cost_usd, 6)}
     return result
 
 

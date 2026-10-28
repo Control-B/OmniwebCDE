@@ -2,7 +2,7 @@
 
 Revision ID: 0001
 Revises:
-Create Date: 2026-10-28 14:57:03.569594
+Create Date: 2026-10-28 15:10:13.453094
 """
 
 import sqlalchemy as sa
@@ -123,7 +123,7 @@ def upgrade() -> None:
         sa.Column("updated_by", sa.Uuid(), nullable=True),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("scope", "scope_id"),
+        sa.UniqueConstraint("tenant_id", "scope", "scope_id"),
     )
     with op.batch_alter_table("budgets", schema=None) as batch_op:
         batch_op.create_index(batch_op.f("ix_budgets_tenant_id"), ["tenant_id"], unique=False)

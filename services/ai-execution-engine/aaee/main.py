@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from . import performance_evaluator, routing_policy, telemetry
+from . import analytics, benchmarks, budget_manager, performance_evaluator, routing_policy, telemetry
 from .config import Settings, get_settings
 from .contracts import SERVER_ONLY_FIELDS, ApprovalDecision, FeedbackInput, TaskRequest, UsageReport, ValidationReport
 from .database import SessionLocal, engine, get_db
@@ -20,7 +20,21 @@ from .engine import ADMIN_APPROVALS, TERMINAL, Engine
 from .execution_planner import PlanContext, plan
 from .inference_gateway import GatewayError, HttpGateway
 from .model_registry import Registry
-from .models import Approval, Base, Execution, Feedback, ModelPolicy, RoutingPolicy, Task, TaskEvent
+from .models import (
+    Approval,
+    AuditEvent,
+    Base,
+    BenchmarkRun,
+    Budget,
+    BudgetAlert,
+    BudgetCounter,
+    Execution,
+    Feedback,
+    ModelPolicy,
+    RoutingPolicy,
+    Task,
+    TaskEvent,
+)
 from .security import Caller, RateLimiter, audit, caller, platform_admin, redact, tenant_admin
 from .task_classifier import classify
 
@@ -234,6 +248,168 @@ async def set_policy_status(version: int, body: PolicyStatus, identity: Caller =
     return policy_view(policy)
 
 
+# Analytics, performance, budgets, audit, benchmarks ---------------------------------------
+
+
+def analytics_scope(identity: Caller, scope: str) -> uuid.UUID | None:
+    """Organization administrators see their organization; only platform administrators see all."""
+    if scope == "platform":
+        if not identity.platform_admin:
+            raise HTTPException(status_code=403, detail="Platform administrator access required")
+        return None
+    return identity.tenant_id
+
+
+@app.get("/v1/admin/analytics")
+async def admin_analytics(
+    days: int = Query(default=30, ge=1, le=365),
+    scope: Literal["organization", "platform"] = "organization",
+    identity: Caller = Depends(tenant_admin),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    return await analytics.routing_analytics(db, analytics_scope(identity, scope), days)
+
+
+@app.get("/v1/admin/performance")
+async def admin_performance(
+    scope: Literal["organization", "platform"] = "organization", identity: Caller = Depends(tenant_admin), db: AsyncSession = Depends(get_db)
+) -> dict:
+    stats = await performance_evaluator.load(db, analytics_scope(identity, scope))
+    active = await routing_policy.ensure_default(db)
+    await db.commit()
+    return {
+        "window_days": performance_evaluator.WINDOW_DAYS,
+        "min_samples": routing_policy.effective(active.config)["min_samples"],
+        "rows": sorted(stats.rows(), key=lambda r: (r["task_type"], r["level"], -r["samples"])),
+        "note": "Success rates come from validation outcomes only. Buckets below the minimum sample count use the policy's conservative defaults.",
+    }
+
+
+class BudgetInput(BaseModel):
+    scope: Literal["platform", "user"]
+    scope_id: str = Field(default="default", pattern=r"^(default|[0-9a-f-]{36})$")
+    limit_usd: float = Field(ge=0, le=1_000_000)
+    hard_limit: bool = True
+    alert_threshold: float = Field(default=0.8, gt=0, le=1)
+
+
+@app.get("/v1/admin/budgets")
+async def admin_budgets(request: Request, identity: Caller = Depends(tenant_admin), db: AsyncSession = Depends(get_db)) -> dict:
+    owner = (Budget.tenant_id == identity.tenant_id) | (Budget.tenant_id.is_(None)) if identity.platform_admin else Budget.tenant_id == identity.tenant_id
+    rows = list(await db.scalars(select(Budget).where(owner).order_by(Budget.scope, Budget.scope_id)))
+    period = budget_manager.month()
+    organization = await db.scalar(
+        select(BudgetCounter).where(BudgetCounter.scope == "organization", BudgetCounter.scope_id == str(identity.tenant_id), BudgetCounter.period == period)
+    )
+    alerts = list(await db.scalars(select(BudgetAlert).where(BudgetAlert.tenant_id == identity.tenant_id).order_by(BudgetAlert.created_at.desc()).limit(20)))
+    try:
+        gateway_rows = await request.app.state.gateway.budgets(identity, None)
+    except GatewayError:
+        gateway_rows = []
+    view = {
+        "period": period,
+        "limits": [
+            {"scope": b.scope, "scope_id": b.scope_id, "limit_usd": b.limit_usd, "hard_limit": b.hard_limit, "alert_threshold": b.alert_threshold} for b in rows
+        ],
+        "defaults": {
+            "user_monthly_usd": request.app.state.engine.settings.user_monthly_budget_usd,
+            "task_usd": request.app.state.engine.settings.default_task_budget_usd,
+        },
+        "gateway": gateway_rows,
+        "organization_usage": {
+            "reserved_usd": round(organization.reserved_usd, 6) if organization else 0.0,
+            "external_spent_usd": round(organization.external_spent_usd, 6) if organization else 0.0,
+        },
+        "alerts": [{"scope": a.scope, "kind": a.kind, "message": a.message, "created_at": a.created_at.isoformat()} for a in alerts],
+        "note": "Organization and project limits are set in the model gateway. Estimated cost controls are not provider-enforced billing limits.",
+    }
+    if identity.platform_admin:
+        platform = await db.scalar(select(BudgetCounter).where(BudgetCounter.scope == "platform", BudgetCounter.period == period))
+        view["platform_usage"] = {"spent_usd": round(platform.spent_usd, 6), "reserved_usd": round(platform.reserved_usd, 6)} if platform else None
+    return view
+
+
+@app.put("/v1/admin/budgets")
+async def put_budget(body: BudgetInput, identity: Caller = Depends(tenant_admin), db: AsyncSession = Depends(get_db)) -> dict:
+    if body.scope == "platform" and not identity.platform_admin:
+        raise HTTPException(status_code=403, detail="Platform administrator access required")
+    tenant = None if body.scope == "platform" else identity.tenant_id
+    scope_id = "platform" if body.scope == "platform" else body.scope_id
+    owner = Budget.tenant_id.is_(None) if tenant is None else Budget.tenant_id == tenant
+    row = await db.scalar(select(Budget).where(Budget.scope == body.scope, Budget.scope_id == scope_id, owner))
+    row = row or Budget(scope=body.scope, scope_id=scope_id, tenant_id=tenant)
+    row.limit_usd, row.hard_limit, row.alert_threshold = body.limit_usd, body.hard_limit, body.alert_threshold
+    row.updated_by = identity.user_id
+    db.add(row)
+    await audit(db, identity, "budget.update", f"{body.scope}:{scope_id}", body.model_dump())
+    await db.commit()
+    return {"scope": row.scope, "scope_id": row.scope_id, "limit_usd": row.limit_usd, "hard_limit": row.hard_limit, "alert_threshold": row.alert_threshold}
+
+
+@app.get("/v1/admin/audit")
+async def admin_audit(
+    scope: Literal["organization", "platform"] = "organization",
+    limit: int = Query(default=100, ge=1, le=500),
+    identity: Caller = Depends(tenant_admin),
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    tenant = analytics_scope(identity, scope)
+    query = select(AuditEvent).order_by(AuditEvent.created_at.desc()).limit(limit)
+    if tenant:
+        query = query.where(AuditEvent.tenant_id == tenant)
+    return [
+        {"actor": e.actor, "action": e.action, "target": e.target, "details": e.details, "created_at": e.created_at.isoformat()}
+        for e in await db.scalars(query)
+    ]
+
+
+class BenchmarkInput(BaseModel):
+    suite: Literal["core-v1"] = "core-v1"
+    models: list[str] = Field(min_length=1, max_length=12)
+    budget_usd: float = Field(gt=0, le=25)
+    confirm_billable: bool = False
+
+
+def benchmark_view(run: BenchmarkRun) -> dict:
+    return {
+        "id": str(run.id),
+        "suite": run.suite,
+        "status": run.status,
+        "models": run.models,
+        "budget_usd": run.budget_usd,
+        "spent_usd": run.spent_usd,
+        "results": run.results,
+        "created_at": run.created_at.isoformat(),
+        "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+    }
+
+
+@app.post("/v1/admin/benchmarks", status_code=202)
+async def start_benchmark(request: Request, body: BenchmarkInput, identity: Caller = Depends(platform_admin), db: AsyncSession = Depends(get_db)) -> dict:
+    if not body.confirm_billable:
+        raise HTTPException(status_code=422, detail="Benchmarks make billable model calls. Confirm with confirm_billable=true.")
+    models = {m.key: m for m in await registry(request).load(db, identity)}
+    unknown = [k for k in body.models if k not in models]
+    if unknown:
+        raise HTTPException(status_code=404, detail=f"Not in the registry: {', '.join(unknown)}")
+    if any(r.status in {"queued", "running"} for r in await db.scalars(select(BenchmarkRun).where(BenchmarkRun.status.in_(["queued", "running"])))):
+        raise HTTPException(status_code=409, detail="A benchmark is already running")
+    run = BenchmarkRun(suite=body.suite, status="queued", models=body.models, results=[], budget_usd=body.budget_usd, spent_usd=0, started_by=identity.user_id)
+    db.add(run)
+    await audit(db, identity, "benchmark.start", body.suite, body.model_dump())
+    await db.commit()
+    selected = [models[k] for k in body.models]
+    task = asyncio.create_task(benchmarks.run(run.id, identity, request.app.state.gateway, selected))
+    request.app.state.engine.running[run.id] = task
+    task.add_done_callback(lambda _: request.app.state.engine.running.pop(run.id, None))
+    return benchmark_view(run)
+
+
+@app.get("/v1/admin/benchmarks")
+async def list_benchmarks(_: Caller = Depends(platform_admin), db: AsyncSession = Depends(get_db)) -> list[dict]:
+    return [benchmark_view(r) for r in await db.scalars(select(BenchmarkRun).order_by(BenchmarkRun.created_at.desc()).limit(20))]
+
+
 # Tasks -----------------------------------------------------------------------------------
 
 
@@ -313,6 +489,7 @@ async def task_view(db: AsyncSession, task: Task, detail: bool = True) -> dict:
                     "provider_cost_usd": round(e.provider_cost_usd, 6),
                     "customer_billable_usd": round(e.customer_billable_usd, 6),
                     "duration_ms": e.duration_ms,
+                    "development_model": bool((e.output or {}).get("development_model")),
                 }
                 for e in executions
             ],
