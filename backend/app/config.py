@@ -23,6 +23,14 @@ class Settings(BaseSettings):
     aaee_enabled: bool = True
     # User IDs or emails allowed to manage platform-wide routing policy and pricing.
     platform_admins: str = ""
+    # Media generation is disabled unless a server-side key, an allow-listed model, and
+    # administrator-validated unit pricing are all configured. Never expose these values.
+    openai_media_api_key: str = Field(default="", repr=False)
+    openai_image_models: str = "gpt-image-1.5,gpt-image-1,gpt-image-1-mini"
+    openai_video_models: str = "sora-2"
+    media_pricing_json: str = "{}"
+    asset_data_dir: str = "./.omniweb/assets"
+    media_poll_seconds: float = 10
     digitalocean_base_url: str = "https://api.digitalocean.com/v2"
     coder_base_url: str = "http://coder:7080"
     coder_access_url: str = "http://coder.localhost"

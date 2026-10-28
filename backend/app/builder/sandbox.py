@@ -27,8 +27,8 @@ HIDDEN = [
     "/root",
     "/run",
     "/var/run",
-    "/tmp",
-    "/var/tmp",
+    "/tmp",  # noqa: S108  guest path hidden from generated code
+    "/var/tmp",  # noqa: S108  guest path hidden from generated code
     "/workspace",
     "/cursor",
     "/opt",

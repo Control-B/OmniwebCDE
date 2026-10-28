@@ -9,12 +9,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from sqlalchemy import inspect, select, text
 
+from . import intelligence_models as _intelligence_models  # noqa: F401  registers metadata
 from .ai_api import router as ai_router
 from .api import router
 from .builder import pipeline, preview
 from .builder_api import router as builder_router
+from .capability_evolution import router as evolution_router
 from .config import get_settings
 from .database import SessionLocal, engine
+from .intelligence import orchestrator
+from .intelligence_api import router as intelligence_router
+from .marketing_api import router as marketing_router
 from .models import ADDED_COLUMNS, Base, Membership, Organization, User, Workspace, WorkspaceState
 from .projects_api import router as projects_router
 from .security import DEV_ORG_ID, DEV_USER_ID, signing_secret
@@ -73,7 +78,9 @@ async def lifespan(_: FastAPI):
                 )
                 await db.commit()
     await pipeline.resume_all(settings)
+    await orchestrator.resume_all()
     yield
+    await orchestrator.stop_all()
     await preview.stop_all()
     await engine.dispose()
 
@@ -93,6 +100,9 @@ app.add_middleware(
 )
 # Before `router`: its POST /workspaces/{id}/{action} would otherwise capture /agent-tasks.
 app.include_router(ai_router)
+app.include_router(intelligence_router)
+app.include_router(marketing_router)
+app.include_router(evolution_router)
 app.include_router(router)
 app.include_router(projects_router)
 app.include_router(builder_router)

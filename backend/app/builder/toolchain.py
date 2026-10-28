@@ -54,9 +54,9 @@ def node_binary() -> str:
 async def _run(*args: str, cwd: Path) -> None:
     env = {
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-        "HOME": os.environ.get("HOME", "/tmp"),
+        "HOME": os.environ.get("HOME", "/tmp"),  # noqa: S108  install subprocess fallback
         "npm_config_update_notifier": "false",
-    }  # noqa: S108
+    }
     process = await asyncio.create_subprocess_exec(
         *args, cwd=cwd, env=env, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
     )
