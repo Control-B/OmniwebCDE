@@ -4,16 +4,15 @@ Revision ID: 69d387ee3839
 Revises: 1bf66432e8d0
 Create Date: 2026-10-28 15:31:37.483540
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 revision: str = '69d387ee3839'
-down_revision: Union[str, None] = '1bf66432e8d0'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = '1bf66432e8d0'
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
