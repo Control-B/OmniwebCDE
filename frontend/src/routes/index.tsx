@@ -253,8 +253,8 @@ function WorkspaceRow({ workspace, onSelect, onConsole }: {
       <div className="workspace-name"><strong>{workspace.name}</strong><span><GitBranch size={12} /> main</span></div>
       <div className="workspace-meta"><span className={`status ${running ? 'ready' : 'stopped'}`}><i />{running ? 'Running' : workspace.state.toLowerCase()}</span><small>{workspace.region} · {workspace.size}</small></div>
       <div className="workspace-actions">
-        {running ? <><button onClick={(e) => { e.stopPropagation(); onConsole(workspace) }}><TerminalSquare size={15} /> Console</button><button onClick={(e) => e.stopPropagation()}><ExternalLink size={15} /> IDE</button></> : <button><Play size={15} /> Start</button>}
-        <button className="dots"><MoreHorizontal size={17} /></button>
+        {running ? <><button onClick={(e) => { e.stopPropagation(); onConsole(workspace) }}><TerminalSquare size={15} /> Console</button><button onClick={(e) => { e.stopPropagation(); onSelect(workspace) }}><ExternalLink size={15} /> IDE</button></> : <button onClick={(e) => { e.stopPropagation(); onSelect(workspace) }}><Play size={15} /> Start</button>}
+        <button className="dots" aria-label="Workspace actions" onClick={(e) => { e.stopPropagation(); onSelect(workspace) }}><MoreHorizontal size={17} /></button>
       </div>
     </div>
   )
