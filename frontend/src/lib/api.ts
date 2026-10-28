@@ -58,8 +58,8 @@ export interface Size {
 
 const API_URL =
   import.meta.env.VITE_API_URL ??
-  (typeof window !== 'undefined' && window.location.port === '43210'
-    ? 'http://localhost:8010'
+  (import.meta.env.DEV && typeof window !== 'undefined'
+    ? `${window.location.protocol}//${window.location.hostname}:8010`
     : '')
 
 export class ApiError extends Error {
