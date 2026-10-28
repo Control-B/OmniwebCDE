@@ -12,7 +12,10 @@ class Settings(BaseSettings):
     frontend_origin: str = "http://localhost:43210"
     oidc_issuer: str = ""
     oidc_audience: str = "omniweb-api"
+    oidc_discovery_url: str = ""
     encryption_key: str = ""
+    model_gateway_url: str = "http://127.0.0.1:8020"
+    model_gateway_secret: str = Field(default="", repr=False)
     digitalocean_base_url: str = "https://api.digitalocean.com/v2"
     coder_base_url: str = "http://coder:7080"
     coder_access_url: str = "http://coder.localhost"

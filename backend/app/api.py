@@ -23,7 +23,7 @@ from .schemas import (
     WorkspaceEventView,
     WorkspaceView,
 )
-from .security import encrypt_secret, get_principal
+from .security import encrypt_secret, get_principal, signing_secret
 from .services.workspaces import create_workspace, summary, tenant_workspace, transition
 
 router = APIRouter(prefix="/api/v1")
@@ -245,7 +245,7 @@ async def lifecycle(
 
 
 def _access_token(workspace: Workspace, principal: Principal, settings: Settings, kind: str) -> str:
-    secret = settings.encryption_key or "local-access-token-secret-change-me"
+    secret = signing_secret(settings)
     now = datetime.now(UTC)
     return jwt.encode(
         {

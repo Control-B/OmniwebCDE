@@ -13,7 +13,7 @@ from .api import router
 from .config import get_settings
 from .database import SessionLocal, engine
 from .models import Base, Membership, Organization, User, Workspace, WorkspaceState
-from .security import DEV_ORG_ID, DEV_USER_ID
+from .security import DEV_ORG_ID, DEV_USER_ID, signing_secret
 
 settings = get_settings()
 logging.basicConfig(
@@ -115,7 +115,7 @@ async def terminal(websocket: WebSocket, workspace_id: uuid.UUID) -> None:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Origin rejected")
         return
     token = websocket.query_params.get("access_token", "")
-    secret = settings.encryption_key or "local-access-token-secret-change-me"
+    secret = signing_secret(settings)
     try:
         claims = jwt.decode(token, secret, algorithms=["HS256"], options={"require": ["exp", "sub"]})
         if claims.get("workspace") != str(workspace_id) or claims.get("kind") != "console":

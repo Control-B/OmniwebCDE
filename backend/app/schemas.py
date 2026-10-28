@@ -12,6 +12,8 @@ class Principal(BaseModel):
     organization_id: uuid.UUID
     email: str
     role: str
+    display_name: str = ""
+    auth_mode: str = "development"
 
 
 class CloudConnectionCreate(BaseModel):
