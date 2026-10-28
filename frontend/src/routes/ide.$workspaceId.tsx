@@ -67,7 +67,7 @@ function BrowserIde() {
       <main className="ide-denied">
         <h1>IDE session expired</h1>
         <p>Return to the workspace and request a new access session.</p>
-        <Link to="/">Back to Omniweb</Link>
+        <Link to="/app">Back to Omniweb</Link>
       </main>
     )
   }
@@ -75,7 +75,7 @@ function BrowserIde() {
   return (
     <main className="browser-ide">
       <header className="ide-titlebar">
-        <Link to="/" className="ide-brand"><Code2 size={17} /> omniweb</Link>
+        <Link to="/app" className="ide-brand"><Code2 size={17} /> omniweb</Link>
         <span>{activeFile} — workspace</span>
         <div><Play size={14} /><Settings size={14} /></div>
       </header>

@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 import appCss from '../styles.css?url'
 import omniwebCss from '../omniweb.css?url'
+import builderCss from '../builder.css?url'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 15_000, retry: 1 } },
@@ -30,6 +31,10 @@ export const Route = createRootRoute({
       {
         rel: 'stylesheet',
         href: omniwebCss,
+      },
+      {
+        rel: 'stylesheet',
+        href: builderCss,
       },
     ],
   }),

@@ -9,6 +9,19 @@ This repository contains a functional local vertical slice. Infrastructure opera
 run in safe mock mode by default; no billable resource is created without changing the
 configuration and providing an authorized, scoped DigitalOcean token.
 
+## Website builder
+
+The landing page at `/` is a prompt-to-website builder. Describe a site, and Omniweb
+generates a responsive, single-file website shown in a live preview at
+`/build/<projectId>`. Refine it by chatting ("make it dark", "add an FAQ", `headline
+"Ship faster together"`, "rename it to Atlas", "make it a restaurant"). Every change is
+a version you can undo or redo. The builder can switch between desktop, tablet, and
+mobile previews, show the generated HTML, copy it, open it in a new tab, or export it.
+
+The designer engine (`frontend/src/lib/site-generator.ts`) runs entirely in the browser
+and needs no API keys. Projects are saved in the browser's local storage. The cloud
+workspaces dashboard is unchanged and now lives at `/app`.
+
 ## Repository layout
 
 - `frontend/` — TanStack Start dashboard, provisioning wizard, workspace details, and xterm console

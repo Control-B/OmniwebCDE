@@ -11,6 +11,8 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AboutRouteImport } from './routes/about'
+import { Route as AppRouteImport } from './routes/app'
+import { Route as BuildProjectIdRouteImport } from './routes/build.$projectId'
 import { Route as ConsoleWorkspaceIdRouteImport } from './routes/console.$workspaceId'
 import { Route as IdeWorkspaceIdRouteImport } from './routes/ide.$workspaceId'
 
@@ -22,6 +24,16 @@ const IndexRoute = IndexRouteImport.update({
 const AboutRoute = AboutRouteImport.update({
   id: '/about',
   path: '/about',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AppRoute = AppRouteImport.update({
+  id: '/app',
+  path: '/app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BuildProjectIdRoute = BuildProjectIdRouteImport.update({
+  id: '/build/$projectId',
+  path: '/build/$projectId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ConsoleWorkspaceIdRoute = ConsoleWorkspaceIdRouteImport.update({
@@ -38,12 +50,16 @@ const IdeWorkspaceIdRoute = IdeWorkspaceIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/app': typeof AppRoute
+  '/build/$projectId': typeof BuildProjectIdRoute
   '/console/$workspaceId': typeof ConsoleWorkspaceIdRoute
   '/ide/$workspaceId': typeof IdeWorkspaceIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/app': typeof AppRoute
+  '/build/$projectId': typeof BuildProjectIdRoute
   '/console/$workspaceId': typeof ConsoleWorkspaceIdRoute
   '/ide/$workspaceId': typeof IdeWorkspaceIdRoute
 }
@@ -51,21 +67,43 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/app': typeof AppRoute
+  '/build/$projectId': typeof BuildProjectIdRoute
   '/console/$workspaceId': typeof ConsoleWorkspaceIdRoute
   '/ide/$workspaceId': typeof IdeWorkspaceIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/about' | '/console/$workspaceId' | '/ide/$workspaceId'
+  fullPaths:
+    | '/'
+    | '/about'
+    | '/app'
+    | '/build/$projectId'
+    | '/console/$workspaceId'
+    | '/ide/$workspaceId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/about' | '/console/$workspaceId' | '/ide/$workspaceId'
+  to:
+    | '/'
+    | '/about'
+    | '/app'
+    | '/build/$projectId'
+    | '/console/$workspaceId'
+    | '/ide/$workspaceId'
   id:
-    '__root__' | '/' | '/about' | '/console/$workspaceId' | '/ide/$workspaceId'
+    | '__root__'
+    | '/'
+    | '/about'
+    | '/app'
+    | '/build/$projectId'
+    | '/console/$workspaceId'
+    | '/ide/$workspaceId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
+  AppRoute: typeof AppRoute
+  BuildProjectIdRoute: typeof BuildProjectIdRoute
   ConsoleWorkspaceIdRoute: typeof ConsoleWorkspaceIdRoute
   IdeWorkspaceIdRoute: typeof IdeWorkspaceIdRoute
 }
@@ -84,6 +122,20 @@ declare module '@tanstack/react-router' {
       path: '/about'
       fullPath: '/about'
       preLoaderRoute: typeof AboutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/app': {
+      id: '/app'
+      path: '/app'
+      fullPath: '/app'
+      preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/build/$projectId': {
+      id: '/build/$projectId'
+      path: '/build/$projectId'
+      fullPath: '/build/$projectId'
+      preLoaderRoute: typeof BuildProjectIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/console/$workspaceId': {
@@ -106,6 +158,8 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
+  AppRoute: AppRoute,
+  BuildProjectIdRoute: BuildProjectIdRoute,
   ConsoleWorkspaceIdRoute: ConsoleWorkspaceIdRoute,
   IdeWorkspaceIdRoute: IdeWorkspaceIdRoute,
 }

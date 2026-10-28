@@ -85,7 +85,7 @@ function WorkspaceConsole() {
   return (
     <main className="console-page">
       <header className="console-topbar">
-        <Link to="/"><ArrowLeft size={16} /></Link>
+        <Link to="/app"><ArrowLeft size={16} /></Link>
         <div className="console-brand"><Command size={17} /><strong>omniweb</strong><span>/</span><em>omniweb-core</em></div>
         <div className={`connection-state ${connected ? 'online' : ''}`}><Circle size={7} fill="currentColor" />{connected ? 'Connected' : 'Connecting'}</div>
       </header>
