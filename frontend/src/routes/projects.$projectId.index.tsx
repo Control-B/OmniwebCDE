@@ -10,6 +10,7 @@ import {
   Hammer,
   KeyRound,
   ListChecks,
+  Megaphone,
   Loader2,
   Maximize2,
   Minimize2,
@@ -421,6 +422,7 @@ function Studio() {
         </div>
         <div className="bd-top-right">
           <span className="st-cost" title="AI usage for this project">{usd(p.estimated_usage_usd)}</span>
+          <Link to="/projects/$projectId/growth" params={{ projectId }} className="bd-icon" title="Business and marketing workspace"><Megaphone size={16} /></Link>
           <button type="button" className="bd-icon st-desktop-only" onClick={() => toggle('left')} aria-pressed={leftOpen} title={leftOpen ? 'Hide conversation panel' : 'Show conversation panel'}><PanelLeft size={16} /></button>
           <button type="button" className="bd-icon st-desktop-only" onClick={() => toggle('right')} aria-pressed={rightOpen} title={rightOpen ? 'Hide project panel' : 'Show project panel'}><PanelRight size={16} /></button>
           <Link to="/projects/$projectId/settings" params={{ projectId }} className="bd-icon" title="Project settings"><Settings size={16} /></Link>

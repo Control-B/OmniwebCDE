@@ -5,6 +5,7 @@ import { useEffect } from 'react'
 import { oidcConfigured, useAuth } from '../../lib/auth'
 
 const LINKS = [
+  { to: '/create', label: 'Create' },
   { to: '/projects', label: 'Projects' },
   { to: '/app', label: 'Cloud workspaces' },
   { to: '/usage', label: 'Usage' },

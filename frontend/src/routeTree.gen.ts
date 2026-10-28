@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as AppRouteImport } from './routes/app'
+import { Route as CreateRouteImport } from './routes/create'
 import { Route as SigninRouteImport } from './routes/signin'
 import { Route as UsageRouteImport } from './routes/usage'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
@@ -20,6 +21,7 @@ import { Route as ConsoleWorkspaceIdRouteImport } from './routes/console.$worksp
 import { Route as IdeWorkspaceIdRouteImport } from './routes/ide.$workspaceId'
 import { Route as ProjectsIndexRouteImport } from './routes/projects.index'
 import { Route as ProjectsProjectIdIndexRouteImport } from './routes/projects.$projectId.index'
+import { Route as ProjectsProjectIdGrowthRouteImport } from './routes/projects.$projectId.growth'
 import { Route as ProjectsProjectIdSettingsRouteImport } from './routes/projects.$projectId.settings'
 
 const IndexRoute = IndexRouteImport.update({
@@ -35,6 +37,11 @@ const AboutRoute = AboutRouteImport.update({
 const AppRoute = AppRouteImport.update({
   id: '/app',
   path: '/app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CreateRoute = CreateRouteImport.update({
+  id: '/create',
+  path: '/create',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SigninRoute = SigninRouteImport.update({
@@ -77,6 +84,11 @@ const ProjectsProjectIdIndexRoute = ProjectsProjectIdIndexRouteImport.update({
   path: '/projects/$projectId/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProjectsProjectIdGrowthRoute = ProjectsProjectIdGrowthRouteImport.update({
+  id: '/projects/$projectId/growth',
+  path: '/projects/$projectId/growth',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProjectsProjectIdSettingsRoute =
   ProjectsProjectIdSettingsRouteImport.update({
     id: '/projects/$projectId/settings',
@@ -88,6 +100,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/app': typeof AppRoute
+  '/create': typeof CreateRoute
   '/signin': typeof SigninRoute
   '/usage': typeof UsageRoute
   '/auth/callback': typeof AuthCallbackRoute
@@ -95,6 +108,7 @@ export interface FileRoutesByFullPath {
   '/console/$workspaceId': typeof ConsoleWorkspaceIdRoute
   '/ide/$workspaceId': typeof IdeWorkspaceIdRoute
   '/projects/': typeof ProjectsIndexRoute
+  '/projects/$projectId/growth': typeof ProjectsProjectIdGrowthRoute
   '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
   '/projects/$projectId/': typeof ProjectsProjectIdIndexRoute
 }
@@ -102,6 +116,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/app': typeof AppRoute
+  '/create': typeof CreateRoute
   '/signin': typeof SigninRoute
   '/usage': typeof UsageRoute
   '/auth/callback': typeof AuthCallbackRoute
@@ -109,6 +124,7 @@ export interface FileRoutesByTo {
   '/console/$workspaceId': typeof ConsoleWorkspaceIdRoute
   '/ide/$workspaceId': typeof IdeWorkspaceIdRoute
   '/projects': typeof ProjectsIndexRoute
+  '/projects/$projectId/growth': typeof ProjectsProjectIdGrowthRoute
   '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
   '/projects/$projectId': typeof ProjectsProjectIdIndexRoute
 }
@@ -117,6 +133,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/app': typeof AppRoute
+  '/create': typeof CreateRoute
   '/signin': typeof SigninRoute
   '/usage': typeof UsageRoute
   '/auth/callback': typeof AuthCallbackRoute
@@ -124,6 +141,7 @@ export interface FileRoutesById {
   '/console/$workspaceId': typeof ConsoleWorkspaceIdRoute
   '/ide/$workspaceId': typeof IdeWorkspaceIdRoute
   '/projects/': typeof ProjectsIndexRoute
+  '/projects/$projectId/growth': typeof ProjectsProjectIdGrowthRoute
   '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
   '/projects/$projectId/': typeof ProjectsProjectIdIndexRoute
 }
@@ -133,6 +151,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/app'
+    | '/create'
     | '/signin'
     | '/usage'
     | '/auth/callback'
@@ -140,6 +159,7 @@ export interface FileRouteTypes {
     | '/console/$workspaceId'
     | '/ide/$workspaceId'
     | '/projects/'
+    | '/projects/$projectId/growth'
     | '/projects/$projectId/settings'
     | '/projects/$projectId/'
   fileRoutesByTo: FileRoutesByTo
@@ -147,6 +167,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/app'
+    | '/create'
     | '/signin'
     | '/usage'
     | '/auth/callback'
@@ -154,6 +175,7 @@ export interface FileRouteTypes {
     | '/console/$workspaceId'
     | '/ide/$workspaceId'
     | '/projects'
+    | '/projects/$projectId/growth'
     | '/projects/$projectId/settings'
     | '/projects/$projectId'
   id:
@@ -161,6 +183,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/app'
+    | '/create'
     | '/signin'
     | '/usage'
     | '/auth/callback'
@@ -168,6 +191,7 @@ export interface FileRouteTypes {
     | '/console/$workspaceId'
     | '/ide/$workspaceId'
     | '/projects/'
+    | '/projects/$projectId/growth'
     | '/projects/$projectId/settings'
     | '/projects/$projectId/'
   fileRoutesById: FileRoutesById
@@ -176,6 +200,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
   AppRoute: typeof AppRoute
+  CreateRoute: typeof CreateRoute
   SigninRoute: typeof SigninRoute
   UsageRoute: typeof UsageRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
@@ -183,6 +208,7 @@ export interface RootRouteChildren {
   ConsoleWorkspaceIdRoute: typeof ConsoleWorkspaceIdRoute
   IdeWorkspaceIdRoute: typeof IdeWorkspaceIdRoute
   ProjectsIndexRoute: typeof ProjectsIndexRoute
+  ProjectsProjectIdGrowthRoute: typeof ProjectsProjectIdGrowthRoute
   ProjectsProjectIdSettingsRoute: typeof ProjectsProjectIdSettingsRoute
   ProjectsProjectIdIndexRoute: typeof ProjectsProjectIdIndexRoute
 }
@@ -208,6 +234,13 @@ declare module '@tanstack/react-router' {
       path: '/app'
       fullPath: '/app'
       preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/create': {
+      id: '/create'
+      path: '/create'
+      fullPath: '/create'
+      preLoaderRoute: typeof CreateRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/signin': {
@@ -266,6 +299,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsProjectIdIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/projects/$projectId/growth': {
+      id: '/projects/$projectId/growth'
+      path: '/projects/$projectId/growth'
+      fullPath: '/projects/$projectId/growth'
+      preLoaderRoute: typeof ProjectsProjectIdGrowthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/projects/$projectId/settings': {
       id: '/projects/$projectId/settings'
       path: '/projects/$projectId/settings'
@@ -280,6 +320,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
   AppRoute: AppRoute,
+  CreateRoute: CreateRoute,
   SigninRoute: SigninRoute,
   UsageRoute: UsageRoute,
   AuthCallbackRoute: AuthCallbackRoute,
@@ -287,6 +328,7 @@ const rootRouteChildren: RootRouteChildren = {
   ConsoleWorkspaceIdRoute: ConsoleWorkspaceIdRoute,
   IdeWorkspaceIdRoute: IdeWorkspaceIdRoute,
   ProjectsIndexRoute: ProjectsIndexRoute,
+  ProjectsProjectIdGrowthRoute: ProjectsProjectIdGrowthRoute,
   ProjectsProjectIdSettingsRoute: ProjectsProjectIdSettingsRoute,
   ProjectsProjectIdIndexRoute: ProjectsProjectIdIndexRoute,
 }

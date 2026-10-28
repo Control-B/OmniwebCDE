@@ -152,6 +152,8 @@ function Landing() {
             Omniweb
           </Link>
           <nav className="lv-links" aria-label="Primary">
+            <Link to="/create">Unified Create</Link>
+            <Link to="/create">Marketing & content</Link>
             <a href="#templates">Templates</a>
             <a href="#how">How it works</a>
             <a href="#features">Features</a>
@@ -161,6 +163,7 @@ function Landing() {
           <div className="lv-nav-actions">
             <Link to="/signin" className="lv-btn lv-btn-ghost">Sign in</Link>
             <Link to="/projects" className="lv-btn lv-btn-ghost">Projects</Link>
+            <Link to="/create" className="lv-btn lv-btn-light">Create campaign</Link>
             <button type="button" className="lv-btn lv-btn-light" onClick={() => inputRef.current?.focus()}>
               Start building
             </button>

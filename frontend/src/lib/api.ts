@@ -214,6 +214,104 @@ export interface Member {
   role: string
 }
 
+export type IntelligenceMode = 'AUTO' | 'BUILD' | 'BUSINESS' | 'MARKETING' | 'CONTENT' | 'IMAGE' | 'VIDEO'
+
+export interface IntelligenceTask {
+  id: string
+  key: string
+  kind: string
+  title: string
+  status: string
+  depends_on: string[]
+  output: Record<string, unknown>
+  error: string | null
+}
+
+export interface IntelligenceWorkflow {
+  id: string
+  project_id: string | null
+  mode: IntelligenceMode
+  prompt: string
+  status: string
+  total_cost_usd: number
+  result: Record<string, unknown>
+  created_at: string
+  finished_at: string | null
+  tasks: IntelligenceTask[]
+}
+
+export interface Asset {
+  id: string
+  project_id: string | null
+  campaign_id: string | null
+  content_type: string
+  title: string
+  status: string
+  current_version: number
+  provider: string | null
+  model: string | null
+  cost_usd: number
+  content?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface BusinessPlan {
+  id: string
+  title: string
+  status: string
+  version: number
+  assumptions: unknown[]
+  scenarios: unknown[]
+  updated_at: string
+}
+
+export interface Campaign {
+  id: string
+  name: string
+  objective: string
+  status: string
+  audience: Record<string, unknown>
+  calendar: unknown[]
+  budget_limit_usd: number
+  spend_usd: number
+}
+
+export interface Funnel {
+  id: string
+  name: string
+  funnel_type: string
+  status: string
+  current_version: number
+  preview_url: string | null
+  definition: { steps?: Array<{ key: string; type: string; title?: string }> }
+}
+
+export interface CrmContact {
+  id: string
+  email: string
+  first_name: string
+  last_name: string
+  company: string
+  source: string
+  stage: string
+  score: number
+  tags: string[]
+  marketing_consent: boolean
+  unsubscribed: boolean
+}
+
+export interface EvolutionCase {
+  id: string
+  direction: string
+  state: string
+  title: string
+  objective: string
+  hypothesis: Record<string, unknown>
+  alternatives: Array<Record<string, unknown>>
+  updated_at: string
+}
+
 const json = (method: string, body: unknown): RequestInit => ({ method, body: JSON.stringify(body) })
 
 export const platform = {
@@ -258,6 +356,18 @@ export const platform = {
   orgBudget: (limit_usd: number, hard_limit: boolean) => request<unknown>('/ai/budget', json('PUT', { limit_usd, hard_limit })),
   orgPreferences: () => request<Preferences>('/ai/preferences'),
   setOrgPreferences: (prefs: Omit<Preferences, 'max_attempts'>) => request<Preferences>('/ai/preferences', json('PUT', prefs)),
+  intelligenceCreate: (input: { prompt: string; mode: IntelligenceMode; project_id?: string; idempotency_key: string }) =>
+    request<IntelligenceWorkflow>('/intelligence/requests', json('POST', input)),
+  intelligenceWorkflow: (id: string) => request<IntelligenceWorkflow>(`/intelligence/requests/${id}`),
+  intelligenceWorkflows: (projectId?: string) =>
+    request<IntelligenceWorkflow[]>(`/intelligence/requests${projectId ? `?project_id=${projectId}` : ''}`),
+  assets: (projectId: string) => request<Asset[]>(`/assets?project_id=${projectId}`),
+  businessPlans: (projectId: string) => request<BusinessPlan[]>(`/business-plans?project_id=${projectId}`),
+  campaigns: (projectId: string) => request<Campaign[]>(`/campaigns?project_id=${projectId}`),
+  funnels: (projectId: string) => request<Funnel[]>(`/funnels?project_id=${projectId}`),
+  contacts: (projectId: string) => request<CrmContact[]>(`/crm/contacts?project_id=${projectId}`),
+  analytics: (projectId: string) => request<{ events: Record<string, number>; visitors: number; leads: number; funnel_conversion_rate: number | null; note: string }>(`/marketing/analytics?project_id=${projectId}`),
+  evolutionCases: (projectId: string) => request<EvolutionCase[]>(`/evolution/cases?project_id=${projectId}`),
 }
 
 export const api = {
