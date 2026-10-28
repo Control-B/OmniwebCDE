@@ -304,3 +304,105 @@ def test_intelligence_and_evolution_block_cross_tenant_access(client):
         client.get("/api/v1/evolution/cases", params={"project_id": row["id"]}).status_code == 404
     )
     app.dependency_overrides.clear()
+
+
+def test_brand_kit_reuse_and_experiment_evaluates_only_recorded_events(client):
+    row = project(client)
+    logo = client.post(
+        "/api/v1/assets",
+        json={
+            "project_id": row["id"],
+            "content_type": "logo",
+            "title": "Approved mark",
+            "content": "<svg aria-label='Brand mark'/>",
+            "usage_rights": {"status": "owned"},
+        },
+    ).json()
+    kit_response = client.post(
+        "/api/v1/brand-kits",
+        json={
+            "project_id": row["id"],
+            "name": "Primary brand",
+            "logo_asset_id": logo["id"],
+            "colors": ["#10231A", "#A3FFCB"],
+            "typography": {"heading": "Inter Tight"},
+            "voice": "Clear, useful, and evidence-aware.",
+            "messaging": ["Build and grow from one workspace."],
+        },
+    )
+    assert kit_response.status_code == 201, kit_response.text
+    kit = kit_response.json()
+    campaign = client.post(
+        "/api/v1/campaigns",
+        json={
+            "project_id": row["id"],
+            "brand_kit_id": kit["id"],
+            "name": "Brand-led launch",
+            "objective": "Generate authorized leads",
+        },
+    )
+    assert campaign.status_code == 201
+    assert campaign.json()["brand_kit_id"] == kit["id"]
+
+    experiment_response = client.post(
+        "/api/v1/marketing/experiments",
+        json={
+            "project_id": row["id"],
+            "campaign_id": campaign.json()["id"],
+            "name": "Landing headline",
+            "hypothesis": "A clearer value proposition may improve CTA interactions.",
+            "metric": "cta_interaction",
+            "minimum_sample_size": 20,
+            "variants": [
+                {"key": "control", "name": "Control", "weight": 50, "definition": {"headline": "Plan better"}},
+                {"key": "clear", "name": "Clear value", "weight": 50, "definition": {"headline": "Plan, build, and grow"}},
+            ],
+        },
+    )
+    assert experiment_response.status_code == 201, experiment_response.text
+    experiment = experiment_response.json()
+    assert client.post(f"/api/v1/marketing/experiments/{experiment['id']}/activate").status_code == 200
+    first = client.get(
+        f"/api/v1/marketing/experiments/{experiment['id']}/assignment",
+        params={"subject_id": "stable-visitor"},
+    ).json()
+    second = client.get(
+        f"/api/v1/marketing/experiments/{experiment['id']}/assignment",
+        params={"subject_id": "stable-visitor"},
+    ).json()
+    assert first["variant_key"] == second["variant_key"]
+
+    for variant in ("control", "clear"):
+        for index in range(10):
+            event = client.post(
+                "/api/v1/marketing/events",
+                json={
+                    "event_type": "page_view",
+                    "idempotency_key": f"exp-view-{variant}-{index}-{uuid.uuid4().hex}",
+                    "project_id": row["id"],
+                    "properties": {"experiment_id": experiment["id"], "variant_key": variant},
+                    "consent": {"analytics": True},
+                },
+            )
+            assert event.status_code == 202
+        conversions = 2 if variant == "control" else 5
+        for index in range(conversions):
+            event = client.post(
+                "/api/v1/marketing/events",
+                json={
+                    "event_type": "cta_interaction",
+                    "idempotency_key": f"exp-convert-{variant}-{index}-{uuid.uuid4().hex}",
+                    "project_id": row["id"],
+                    "properties": {"experiment_id": experiment["id"], "variant_key": variant},
+                    "consent": {"analytics": True},
+                },
+            )
+            assert event.status_code == 202
+    evaluated = client.post(
+        f"/api/v1/marketing/experiments/{experiment['id']}/evaluate"
+    )
+    assert evaluated.status_code == 200, evaluated.text
+    result = evaluated.json()["result"]
+    assert result["sample_size"] == 20
+    assert result["winner"] == "clear"
+    assert result["conclusion"] == "observed_leader"

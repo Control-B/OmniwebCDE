@@ -7,7 +7,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,11 +19,15 @@ from .intelligence_models import (
     AutomationWorkflow,
     BlogArticle,
     BlogSite,
+    BrandKit,
+    ContentAsset,
     CrmContact,
+    ExperimentVariant,
     Funnel,
     FunnelVersion,
     MarketingCampaign,
     MarketingEvent,
+    MarketingExperiment,
 )
 from .models import Approval
 from .projects_api import audit, project_access
@@ -87,6 +91,110 @@ def campaign_view(row: MarketingCampaign) -> dict:
     }
 
 
+# Brand kits ------------------------------------------------------------------------------------
+
+
+def brand_kit_view(row: BrandKit) -> dict:
+    return {
+        "id": str(row.id),
+        "project_id": str(row.project_id) if row.project_id else None,
+        "name": row.name,
+        "logo_asset_id": str(row.logo_asset_id) if row.logo_asset_id else None,
+        "colors": row.colors,
+        "typography": row.typography,
+        "voice": row.voice,
+        "messaging": row.messaging,
+        "updated_at": row.updated_at.isoformat(),
+    }
+
+
+class BrandKitInput(BaseModel):
+    project_id: uuid.UUID | None = None
+    name: str = Field(min_length=2, max_length=160)
+    logo_asset_id: uuid.UUID | None = None
+    colors: list[str] = Field(default_factory=list, max_length=20)
+    typography: dict = Field(default_factory=dict)
+    voice: str = Field(default="", max_length=20_000)
+    messaging: list[str] = Field(default_factory=list, max_length=100)
+
+    @field_validator("colors")
+    @classmethod
+    def valid_colors(cls, value: list[str]) -> list[str]:
+        if any(not re.fullmatch(r"#[0-9a-fA-F]{6}", color) for color in value):
+            raise ValueError("Colors must be six-digit hexadecimal values")
+        return value
+
+
+async def validate_brand_assets(
+    db: AsyncSession, principal: Principal, project_id: uuid.UUID | None, logo_asset_id: uuid.UUID | None
+) -> None:
+    if project_id:
+        await project_access(db, project_id, principal, write=True)
+    if logo_asset_id:
+        asset = await db.scalar(
+            select(ContentAsset).where(
+                ContentAsset.id == logo_asset_id,
+                ContentAsset.organization_id == principal.organization_id,
+            )
+        )
+        if not asset or (project_id and asset.project_id not in {None, project_id}):
+            raise HTTPException(status_code=422, detail="Logo asset is outside this project")
+
+
+@router.get("/brand-kits")
+async def brand_kits(
+    project_id: uuid.UUID | None = None,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_principal),
+) -> list[dict]:
+    query = select(BrandKit).where(BrandKit.organization_id == principal.organization_id)
+    if project_id:
+        await project_access(db, project_id, principal)
+        query = query.where(BrandKit.project_id == project_id)
+    elif principal.role not in {"owner", "admin"}:
+        raise HTTPException(status_code=403, detail="Choose a project")
+    rows = await db.scalars(query.order_by(BrandKit.updated_at.desc()))
+    return [brand_kit_view(row) for row in rows]
+
+
+@router.post("/brand-kits", status_code=status.HTTP_201_CREATED)
+async def create_brand_kit(
+    data: BrandKitInput,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_principal),
+) -> dict:
+    await validate_brand_assets(db, principal, data.project_id, data.logo_asset_id)
+    row = BrandKit(organization_id=principal.organization_id, **data.model_dump())
+    db.add(row)
+    await db.flush()
+    audit(db, principal, "brand_kit.create", "brand_kit", str(row.id))
+    await db.commit()
+    return brand_kit_view(row)
+
+
+@router.put("/brand-kits/{brand_kit_id}")
+async def update_brand_kit(
+    brand_kit_id: uuid.UUID,
+    data: BrandKitInput,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_principal),
+) -> dict:
+    row = await db.scalar(
+        select(BrandKit).where(
+            BrandKit.id == brand_kit_id,
+            BrandKit.organization_id == principal.organization_id,
+        )
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Brand kit not found")
+    await validate_brand_assets(db, principal, data.project_id, data.logo_asset_id)
+    for key, value in data.model_dump().items():
+        setattr(row, key, value)
+    audit(db, principal, "brand_kit.update", "brand_kit", str(row.id))
+    await db.commit()
+    return brand_kit_view(row)
+
+
 @router.get("/campaigns")
 async def campaigns(
     project_id: uuid.UUID,
@@ -107,6 +215,7 @@ async def campaigns(
 
 class CampaignInput(BaseModel):
     project_id: uuid.UUID
+    brand_kit_id: uuid.UUID | None = None
     name: str = Field(min_length=2, max_length=200)
     objective: str = Field(min_length=3, max_length=10_000)
     audience: dict = Field(default_factory=dict)
@@ -122,6 +231,15 @@ async def create_campaign(
     principal: Principal = Depends(get_principal),
 ) -> dict:
     await project_access(db, data.project_id, principal, write=True)
+    if data.brand_kit_id:
+        kit = await db.scalar(
+            select(BrandKit).where(
+                BrandKit.id == data.brand_kit_id,
+                BrandKit.organization_id == principal.organization_id,
+            )
+        )
+        if not kit or kit.project_id not in {None, data.project_id}:
+            raise HTTPException(status_code=422, detail="Brand kit is outside this project")
     row = MarketingCampaign(
         organization_id=principal.organization_id,
         created_by=principal.user_id,
@@ -620,6 +738,224 @@ async def marketing_analytics(
         "cost_per_lead_usd": round(campaign.spend_usd / forms, 4) if campaign and forms else None,
         "note": "Only recorded first-party events are shown. Missing metrics are null, never estimated.",
     }
+
+
+# A/B experiments ------------------------------------------------------------------------------
+
+
+class VariantInput(BaseModel):
+    key: str = Field(pattern=r"^[a-z0-9_-]{1,40}$")
+    name: str = Field(min_length=1, max_length=120)
+    weight: int = Field(ge=1, le=99)
+    definition: dict = Field(default_factory=dict)
+
+
+class ExperimentInput(BaseModel):
+    project_id: uuid.UUID
+    campaign_id: uuid.UUID | None = None
+    name: str = Field(min_length=2, max_length=200)
+    hypothesis: str = Field(min_length=3, max_length=10_000)
+    metric: str
+    minimum_sample_size: int = Field(default=30, ge=20, le=1_000_000)
+    variants: list[VariantInput] = Field(min_length=2, max_length=10)
+
+    @field_validator("metric")
+    @classmethod
+    def metric_supported(cls, value: str) -> str:
+        if value not in EVENTS:
+            raise ValueError("Metric must be a supported marketing event")
+        return value
+
+    @field_validator("variants")
+    @classmethod
+    def variants_valid(cls, value: list[VariantInput]) -> list[VariantInput]:
+        if len({item.key for item in value}) != len(value):
+            raise ValueError("Variant keys must be unique")
+        if sum(item.weight for item in value) != 100:
+            raise ValueError("Variant weights must total 100")
+        return value
+
+
+async def experiment_owned(
+    db: AsyncSession, principal: Principal, experiment_id: uuid.UUID, write: bool = False
+) -> MarketingExperiment:
+    row = await db.scalar(
+        select(MarketingExperiment).where(
+            MarketingExperiment.id == experiment_id,
+            MarketingExperiment.organization_id == principal.organization_id,
+        )
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+    await project_access(db, row.project_id, principal, write=write)
+    return row
+
+
+async def experiment_view(db: AsyncSession, row: MarketingExperiment) -> dict:
+    variants = await db.scalars(
+        select(ExperimentVariant)
+        .where(ExperimentVariant.experiment_id == row.id)
+        .order_by(ExperimentVariant.key)
+    )
+    return {
+        "id": str(row.id),
+        "project_id": str(row.project_id),
+        "campaign_id": str(row.campaign_id) if row.campaign_id else None,
+        "name": row.name,
+        "hypothesis": row.hypothesis,
+        "metric": row.metric,
+        "status": row.status,
+        "minimum_sample_size": row.minimum_sample_size,
+        "result": row.result,
+        "variants": [
+            {
+                "id": str(item.id),
+                "key": item.key,
+                "name": item.name,
+                "weight": item.weight,
+                "definition": item.definition,
+            }
+            for item in variants
+        ],
+    }
+
+
+@router.post("/marketing/experiments", status_code=status.HTTP_201_CREATED)
+async def create_experiment(
+    data: ExperimentInput,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_principal),
+) -> dict:
+    await project_access(db, data.project_id, principal, write=True)
+    if data.campaign_id:
+        campaign = await campaign_owned(db, principal, data.campaign_id)
+        if campaign.project_id != data.project_id:
+            raise HTTPException(status_code=422, detail="Campaign and experiment must share a project")
+    row = MarketingExperiment(
+        organization_id=principal.organization_id,
+        project_id=data.project_id,
+        campaign_id=data.campaign_id,
+        name=data.name,
+        hypothesis=data.hypothesis,
+        metric=data.metric,
+        minimum_sample_size=data.minimum_sample_size,
+        created_by=principal.user_id,
+    )
+    db.add(row)
+    await db.flush()
+    for variant in data.variants:
+        db.add(
+            ExperimentVariant(
+                experiment_id=row.id,
+                organization_id=principal.organization_id,
+                **variant.model_dump(),
+            )
+        )
+    audit(db, principal, "marketing.experiment.create", "marketing_experiment", str(row.id))
+    await db.commit()
+    return await experiment_view(db, row)
+
+
+@router.post("/marketing/experiments/{experiment_id}/activate")
+async def activate_experiment(
+    experiment_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(require_admin),
+) -> dict:
+    row = await experiment_owned(db, principal, experiment_id, write=True)
+    if row.status != "draft":
+        raise HTTPException(status_code=409, detail=f"Experiment is {row.status}")
+    row.status = "active"
+    audit(db, principal, "marketing.experiment.activate", "marketing_experiment", str(row.id))
+    await db.commit()
+    return await experiment_view(db, row)
+
+
+@router.get("/marketing/experiments/{experiment_id}/assignment")
+async def assign_experiment(
+    experiment_id: uuid.UUID,
+    subject_id: str = Query(min_length=1, max_length=200),
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_principal),
+) -> dict:
+    row = await experiment_owned(db, principal, experiment_id)
+    if row.status != "active":
+        raise HTTPException(status_code=409, detail="Experiment is not active")
+    variants = list(
+        await db.scalars(
+            select(ExperimentVariant)
+            .where(ExperimentVariant.experiment_id == row.id)
+            .order_by(ExperimentVariant.key)
+        )
+    )
+    bucket = int(hashlib.sha256(f"{row.id}:{subject_id}".encode()).hexdigest()[:8], 16) % 100
+    cursor = 0
+    selected = variants[-1]
+    for variant in variants:
+        cursor += variant.weight
+        if bucket < cursor:
+            selected = variant
+            break
+    return {
+        "experiment_id": str(row.id),
+        "variant_key": selected.key,
+        "definition": selected.definition,
+        "tracking_properties": {
+            "experiment_id": str(row.id),
+            "variant_key": selected.key,
+            "assignment_bucket": bucket,
+        },
+    }
+
+
+@router.post("/marketing/experiments/{experiment_id}/evaluate")
+async def evaluate_experiment(
+    experiment_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_principal),
+) -> dict:
+    row = await experiment_owned(db, principal, experiment_id, write=True)
+    variants = list(
+        await db.scalars(select(ExperimentVariant).where(ExperimentVariant.experiment_id == row.id))
+    )
+    events = list(
+        await db.scalars(
+            select(MarketingEvent).where(
+                MarketingEvent.organization_id == principal.organization_id,
+                MarketingEvent.project_id == row.project_id,
+            )
+        )
+    )
+    counts = {variant.key: {"exposures": 0, "conversions": 0} for variant in variants}
+    for event in events:
+        if event.properties.get("experiment_id") != str(row.id):
+            continue
+        key = event.properties.get("variant_key")
+        if key not in counts:
+            continue
+        if event.event_type == "page_view":
+            counts[key]["exposures"] += 1
+        if event.event_type == row.metric:
+            counts[key]["conversions"] += 1
+    sample_size = sum(item["exposures"] for item in counts.values())
+    rates = {
+        key: (round(item["conversions"] / item["exposures"], 6) if item["exposures"] else None)
+        for key, item in counts.items()
+    }
+    conclusive = sample_size >= row.minimum_sample_size and all(rate is not None for rate in rates.values())
+    winner = max(rates, key=lambda key: rates[key] or 0) if conclusive else None
+    row.result = {
+        "sample_size": sample_size,
+        "counts": counts,
+        "rates": rates,
+        "winner": winner,
+        "conclusion": "observed_leader" if conclusive else "inconclusive",
+        "note": "An observed leader is not proof of causation or statistical significance.",
+    }
+    row.status = "evaluated" if conclusive else "inconclusive"
+    audit(db, principal, "marketing.experiment.evaluate", "marketing_experiment", str(row.id))
+    await db.commit()
+    return await experiment_view(db, row)
 
 
 @router.get("/crm/contacts")

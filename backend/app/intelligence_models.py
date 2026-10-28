@@ -201,6 +201,42 @@ class MarketingCampaign(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 
 
+class MarketingExperiment(Base):
+    __tablename__ = "marketing_experiments"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), index=True
+    )
+    campaign_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("marketing_campaigns.id", ondelete="SET NULL"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(200))
+    hypothesis: Mapped[str] = mapped_column(Text)
+    metric: Mapped[str] = mapped_column(String(80))
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    minimum_sample_size: Mapped[int] = mapped_column(Integer, default=30)
+    result: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class ExperimentVariant(Base):
+    __tablename__ = "experiment_variants"
+    __table_args__ = (UniqueConstraint("experiment_id", "key"),)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    experiment_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("marketing_experiments.id", ondelete="CASCADE"), index=True
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    key: Mapped[str] = mapped_column(String(40))
+    name: Mapped[str] = mapped_column(String(120))
+    weight: Mapped[int] = mapped_column(Integer, default=50)
+    definition: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class Funnel(Base):
     __tablename__ = "funnels"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
