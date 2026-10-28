@@ -27,7 +27,19 @@ Complexity = Literal["trivial", "simple", "normal", "complex"]
 COMPLEXITIES: tuple[str, ...] = ("trivial", "simple", "normal", "complex")
 RiskLevel = Literal["low", "medium", "high", "critical"]
 RISKS: tuple[str, ...] = ("low", "medium", "high", "critical")
-Strategy = Literal["deterministic", "gpt_oss", "hosted_model", "codex", "human_approval"]
+Strategy = Literal["deterministic", "low_cost_model", "hosted_model", "human_approval"]
+
+# Development phases. Each phase has its own model policy (allowed providers, preferred
+# registry models, and level bounds), so model choice follows the project's stage.
+DevelopmentPhase = Literal["discovery", "architecture", "scaffolding", "implementation", "debugging", "testing", "security_review", "release"]
+PHASES: tuple[str, ...] = DevelopmentPhase.__args__  # type: ignore[attr-defined]
+PHASE_OF_TASK = {
+    "requirement_analysis": "discovery", "content_generation": "discovery", "documentation": "release",
+    "architecture_design": "architecture", "application_scaffolding": "scaffolding", "frontend_generation": "implementation",
+    "backend_generation": "implementation", "database_generation": "implementation", "mobile_generation": "implementation",
+    "incremental_code_edit": "implementation", "debugging": "debugging", "test_generation": "testing",
+    "security_review": "security_review", "deployment_preparation": "release",
+}
 
 # Actions a task may need. Sensitive ones always require a human approval enforced here,
 # regardless of which strategy the planner picks.
@@ -38,7 +50,7 @@ SENSITIVE_ACTIONS = {
     "billing_logic_change",
     "destructive_database_change",
 }
-KNOWN_ACTIONS = SENSITIVE_ACTIONS | {"read_artifacts", "write_files", "autonomous_code_execution", "run_validation", "network_access"}
+KNOWN_ACTIONS = SENSITIVE_ACTIONS | {"read_artifacts", "write_files", "run_validation", "network_access"}
 
 # Fields that only server policy may set. A request that tries to supply them is rejected.
 SERVER_ONLY_FIELDS = {"tenant_id", "risk_level", "approval_requirements", "authorization", "role", "platform_admin", "user_id"}
@@ -71,7 +83,7 @@ class Prompt(BaseModel):
 
 class ExecutionEnvironment(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    kind: Literal["none", "builder_sandbox", "aaee_workspace", "cde_workspace", "authorized_test_environment"] = "none"
+    kind: Literal["none", "builder_sandbox", "cde_workspace", "authorized_test_environment"] = "none"
     workspace_id: str | None = Field(default=None, max_length=64)
     target_url: str | None = Field(default=None, max_length=300)
 
@@ -88,6 +100,7 @@ class TaskRequest(BaseModel):
     input_artifacts: list[ArtifactInput] = Field(default_factory=list, max_length=400)
     required_capabilities: list[str] = Field(default_factory=list, max_length=20)
     complexity: Complexity | None = None  # a hint; the classifier may raise it, never lower it
+    development_phase: DevelopmentPhase | None = None  # defaults to the task type's phase
     quality_threshold: float | None = Field(default=None, ge=0, le=1)
     latency_target_ms: int | None = Field(default=None, ge=100, le=3_600_000)
     maximum_budget_usd: float | None = Field(default=None, gt=0, le=1_000)
@@ -133,6 +146,7 @@ class TaskSpec(BaseModel):
     required_capabilities: list[str]
     min_context_tokens: int
     complexity: str
+    development_phase: str
     risk_level: str
     risk_reasons: list[str]
     quality_threshold: float
@@ -183,25 +197,17 @@ class ValidationReport(BaseModel):
 
 
 class UsageReport(BaseModel):
-    """Usage reported by a runner outside AAEE, such as the CDE workspace agent."""
+    """Usage reported by a caller-side tool run outside AAEE."""
 
     model_config = ConfigDict(extra="forbid")
     idempotency_key: str = Field(pattern=r"^[A-Za-z0-9_.:-]{8,120}$")
-    source: Literal["workspace_runner", "tool"] = "workspace_runner"
+    source: Literal["tool"] = "tool"
     input_tokens: int = Field(default=0, ge=0)
     output_tokens: int = Field(default=0, ge=0)
     cached_tokens: int = Field(default=0, ge=0)
     reported_cost_usd: float | None = Field(default=None, ge=0, le=1_000)
     billing_model: Literal["platform", "customer"] = "platform"
     details: dict = Field(default_factory=dict)
-
-
-class WorkspaceCompletion(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    status: Literal["completed", "failed", "cancelled"]
-    modified_files: list[str] = Field(default_factory=list, max_length=2_000)
-    summary: str = Field(default="", max_length=8_000)
-    error: str | None = Field(default=None, max_length=500)
 
 
 class ApprovalDecision(BaseModel):

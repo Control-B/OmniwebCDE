@@ -57,18 +57,45 @@ def test_self_hosted_needs_admin_infrastructure_cost():
     assert view.pricing_status == "admin_validated" and view.cost(1_000_000, 0) == 0.08
 
 
-def test_gpt_oss_is_the_first_stage_without_evidence():
+def test_low_cost_stage_comes_first_without_evidence():
     result = plan(spec_for(), views(), DEFAULT_POLICY, NoStats(), ctx())
-    assert result["chosen"]["strategy"] == "gpt_oss"
+    assert result["chosen"]["strategy"] == "low_cost_model"
     assert result["chosen"]["model_id"] == "openai/gpt-oss-20b"
-    assert [c["level"] for c in result["chain"]][:2] == ["gpt_oss", "hosted_standard"]
+    assert [c["level"] for c in result["chain"]][:2] == ["low_cost", "hosted_standard"]
 
 
-def test_measured_cheaper_hosted_model_displaces_gpt_oss():
+def test_economical_grok_models_join_the_low_cost_stage():
+    by_key = {v.key: v for v in views()}
+    result = plan(spec_for(), views(), DEFAULT_POLICY, NoStats(), ctx())
+    levels = {r["key"]: r["level"] for r in result["ranked"]}
+    assert by_key["xai/grok-code-fast-1"].family == "grok"
+    assert levels["xai/grok-code-fast-1"] == "low_cost"
+    # A flagship Grok model is priced into the hosted bands, not the low-cost stage.
+    assert levels.get("xai/grok-4", "excluded") != "low_cost"
+    without_oss = [v for v in views() if v.family != "gpt_oss"]
+    grok_first = plan(spec_for(), without_oss, DEFAULT_POLICY, NoStats(), ctx())
+    assert grok_first["chosen"]["model_id"] == "grok-code-fast-1"
+
+
+def test_development_phase_controls_levels_providers_and_preferred_models():
+    architecture = plan(spec_for(task_type="architecture_design", task_description="Design the data model"), views(), DEFAULT_POLICY,
+                        NoStats(), ctx())
+    assert architecture["chosen"]["level"] in {"hosted_standard", "hosted_advanced"}
+    policy = validate_config({"phases": {"implementation": {"providers": ["openai"], "preferred_models": ["openai/gpt-5-mini"]}}})
+    result = plan(spec_for(), views(), policy, NoStats(), ctx())
+    assert result["chosen"]["model_id"] == "gpt-5-mini"
+    assert all(r["provider"] == "openai" for r in result["ranked"])
+    # A requested phase cannot loosen the task type's own phase minimum.
+    security = spec_for(task_type="security_review", task_description="Review input validation", development_phase="discovery")
+    assert all(r["level"] in {"hosted_standard", "hosted_advanced"} for r in plan(security, views(), DEFAULT_POLICY, NoStats(), ctx())["ranked"])
+
+
+def test_measured_cheaper_hosted_model_displaces_low_cost_models():
     stats = Measured({
         "openai/gpt-5-mini": Observation(samples=200, successes=196, lower_bound=0.95, mean_cost_usd=0.001, p50_latency_ms=900),
         "openrouter/openai/gpt-oss-20b": Observation(samples=200, successes=40, lower_bound=0.15, mean_cost_usd=0.0005, p50_latency_ms=900),
         "openrouter/openai/gpt-oss-120b": Observation(samples=200, successes=50, lower_bound=0.2, mean_cost_usd=0.0008, p50_latency_ms=900),
+        "xai/grok-code-fast-1": Observation(samples=200, successes=50, lower_bound=0.2, mean_cost_usd=0.0008, p50_latency_ms=900),
     })
     result = plan(spec_for(), views(), DEFAULT_POLICY, stats, ctx())
     assert result["chosen"]["model_id"] == "gpt-5-mini"
@@ -80,14 +107,14 @@ def test_sparse_data_uses_conservative_defaults():
     result = plan(spec_for(), views(), DEFAULT_POLICY, stats, ctx())
     mini = next(r for r in result["ranked"] if r["model_id"] == "gpt-5-mini")
     assert mini["p_source"] == "default" and mini["samples"] == 3
-    assert result["chosen"]["strategy"] == "gpt_oss"
+    assert result["chosen"]["strategy"] == "low_cost_model"
 
 
-def test_security_sensitive_tasks_bypass_gpt_oss_and_keep_mandatory_gates():
+def test_security_sensitive_tasks_bypass_low_cost_models_and_keep_mandatory_gates():
     spec = spec_for(task_type="security_review", task_description="Review the auth middleware for token handling flaws")
     result = plan(spec, views(), DEFAULT_POLICY, NoStats(), ctx())
     assert result["chosen"]["strategy"] == "hosted_model"
-    assert all(r["strategy"] != "gpt_oss" for r in result["ranked"])
+    assert all(r["strategy"] != "low_cost_model" for r in result["ranked"])
     assert ["secrets_scan"] in result["gates"]["groups"]
 
 
@@ -96,7 +123,7 @@ def test_deterministic_template_is_tried_first():
     result = plan(spec, views(), DEFAULT_POLICY, NoStats(), ctx())
     assert result["chosen"]["strategy"] == "deterministic" and result["chosen"]["tool_runner"] == "caller"
     assert result["chosen"]["expected_cost_usd"] == 0
-    oss = next(r for r in result["ranked"] if r["strategy"] == "gpt_oss")
+    oss = next(r for r in result["ranked"] if r["strategy"] == "low_cost_model")
     assert result["estimated_cost_usd"] < oss["chain_expected_cost_usd"]
 
 
@@ -111,22 +138,6 @@ def test_budget_excludes_candidates_whose_worst_case_does_not_fit():
     result = plan(spec_for(), views(), DEFAULT_POLICY, NoStats(), ctx(budget_available_usd=0.0001))
     assert result["chosen"]["strategy"] == "human_approval"
     assert "budget_overage" in result["gates"]["approvals"]
-
-
-def test_codex_requires_permission_justification_and_approval():
-    plain = plan(spec_for(), views(), DEFAULT_POLICY, NoStats(), ctx(codex_model=views()[4], codex_runtime="scripted"))
-    assert any(e["key"] == "codex" for e in plain["excluded"])
-    spec = spec_for(task_type="debugging", complexity="complex", permitted_actions=["autonomous_code_execution", "write_files"],
-                    execution_environment={"kind": "aaee_workspace"})
-    stats = Measured({f"openrouter/openai/gpt-oss-{s}": Observation(200, 10, 0.03, 0.001, None) for s in ("20b", "120b")})
-    stats.table.update({m: Observation(200, 20, 0.07, 0.01, None) for m in ("openai/gpt-5-mini", "openai/gpt-5")})
-    base = {"codex_model": views()[4], "codex_runtime": "scripted", "execution_ceiling_usd": 2.0}
-    result = plan(spec, views(), DEFAULT_POLICY, stats, ctx(**base))
-    # Cheap attempts first: Codex is the last step of the chain, not the first.
-    assert result["chosen"]["strategy"] == "gpt_oss" and result["chain"][-1]["strategy"] == "codex"
-    escalated = plan(spec, views(), DEFAULT_POLICY, stats, ctx(**base, min_level=4, quality_failures=2, attempts_used=2))
-    assert escalated["chosen"]["strategy"] == "codex"
-    assert "codex_execution" in escalated["gates"]["approvals"]
 
 
 def test_classifier_raises_risk_and_never_trusts_client_risk():
@@ -165,7 +176,7 @@ def test_plan_endpoint_reads_registry_and_budget(client, org):
                            headers=headers(org, user=uuid.uuid4()))
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["plan"]["chosen"]["strategy"] == "gpt_oss"
+    assert body["plan"]["chosen"]["strategy"] == "low_cost_model"
     assert body["spec"]["tenant_id"] == str(org)
 
 

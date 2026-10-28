@@ -38,9 +38,6 @@ resource "coder_agent" "main" {
       curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
       sudo apt-get install -y nodejs
     fi
-    if ! command -v codex >/dev/null; then
-      sudo npm install -g @openai/codex@0.165.0
-    fi
   EOT
 
   metadata {

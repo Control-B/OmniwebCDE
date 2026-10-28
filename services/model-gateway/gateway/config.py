@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     openai_api_key: str = Field(default="", repr=False)
     anthropic_api_key: str = Field(default="", repr=False)
     gemini_api_key: str = Field(default="", repr=False)
+    xai_api_key: str = Field(default="", repr=False)
     openrouter_api_key: str = Field(default="", repr=False)
     openai_compatible_base_url: str = ""
     openai_compatible_api_key: str = Field(default="", repr=False)

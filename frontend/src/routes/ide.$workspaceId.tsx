@@ -84,7 +84,7 @@ function BrowserIde() {
         <button aria-label="Search"><Search size={20} /></button>
         <button aria-label="Source control"><GitBranch size={20} /></button>
         <button aria-label="Extensions"><Blocks size={20} /></button>
-        <button aria-label="Codex"><Bot size={20} /></button>
+        <button aria-label="AI agent"><Bot size={20} /></button>
       </aside>
       <aside className="ide-explorer">
         <h2>EXPLORER</h2>

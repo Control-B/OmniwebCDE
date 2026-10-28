@@ -16,10 +16,10 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 from .capability_evaluator import evaluate
-from .contracts import COMPLEXITIES, TaskSpec
+from .contracts import PHASE_OF_TASK, TaskSpec
 from .deterministic_tools import ENGINE_TOOLS
 from .model_registry import ModelView
-from .routing_policy import LEVELS, RISK_ORDER, TEXT_TASKS
+from .routing_policy import LEVELS, RISK_ORDER
 from .task_classifier import estimate_tokens
 from .validation_engine import required_checks
 
@@ -46,7 +46,7 @@ class NoStats:
 
 @dataclass
 class Candidate:
-    strategy: str  # deterministic | gpt_oss | hosted_model | codex | human_approval
+    strategy: str  # deterministic | low_cost_model | hosted_model | human_approval
     level_name: str
     model: ModelView | None = None
     tool: str | None = None
@@ -71,8 +71,6 @@ class Candidate:
     def key(self) -> str:
         if self.strategy == "deterministic":
             return f"tool:{self.tool}"
-        if self.strategy == "codex":
-            return f"codex:{self.model.key if self.model else 'default'}"
         return self.model.key if self.model else self.strategy
 
     def view(self) -> dict:
@@ -98,10 +96,25 @@ class PlanContext:
     exclude_keys: set[str] = field(default_factory=set)
     purpose: str = "generate"
     production: bool = False
-    codex_model: ModelView | None = None
-    codex_runtime: str | None = None  # None when no runner is usable
     approved_keys: set[str] = field(default_factory=set)
     overage_approved: bool = False
+
+
+def phase_rules(spec: TaskSpec, policy: dict) -> dict:
+    """Rules of the requested phase, never looser than the task type's own phase minimum."""
+    requested = policy["phases"][spec.development_phase]
+    inherent = policy["phases"][PHASE_OF_TASK[spec.task_type]]
+    min_level = max(requested["min_level"], inherent["min_level"])
+    return {**requested, "min_level": min_level, "max_level": max(requested["max_level"], min_level)}
+
+
+def level_of_model(model: ModelView, policy: dict) -> str:
+    if model.family == "development":
+        return "development"
+    blended = model.blended_usd_per_mtok or 0
+    if model.family in policy["low_cost_families"] and blended <= policy["low_cost_max_blended_usd"]:
+        return "low_cost"
+    return band(model, policy)
 
 
 def band(model: ModelView, policy: dict) -> str:
@@ -154,26 +167,38 @@ def build_candidates(spec: TaskSpec, models: list[ModelView], policy: dict, stat
             _probability(candidate, spec, policy, stats, f"deterministic_{option['coverage']}")
             candidates.append(candidate)
 
-    # Strategies B and C: GPT-OSS and hosted models through the gateway.
-    gpt_oss_blocked = None
-    if spec.task_type in policy["gpt_oss_excluded_task_types"]:
-        gpt_oss_blocked = "GPT-OSS is excluded for this task type by policy"
-    elif RISK_ORDER.index(spec.risk_level) > RISK_ORDER.index(policy["gpt_oss_max_risk"]):
-        gpt_oss_blocked = f"risk {spec.risk_level} exceeds the policy's GPT-OSS limit ({policy['gpt_oss_max_risk']})"
+    # Strategies B and C: low-cost models (GPT-OSS, economical Grok) and hosted models, all
+    # called through the gateway. The development phase bounds which levels and providers apply.
+    phase = phase_rules(spec, policy)
+    low_cost_blocked = None
+    if spec.task_type in policy["low_cost_excluded_task_types"]:
+        low_cost_blocked = "low-cost models are excluded for this task type by policy"
+    elif RISK_ORDER.index(spec.risk_level) > RISK_ORDER.index(policy["low_cost_max_risk"]):
+        low_cost_blocked = f"risk {spec.risk_level} exceeds the policy's low-cost limit ({policy['low_cost_max_risk']})"
+    preferred = [m for m in models if m.key in phase["preferred_models"] and not evaluate(m, spec, ctx.production)]
     real_models = [m for m in models if m.family != "development"]
     for model in models:
         reasons = evaluate(model, spec, ctx.production)
-        if model.family == "gpt_oss" and gpt_oss_blocked:
-            reasons.append(gpt_oss_blocked)
-        if model.family == "development" and any(not evaluate(m, spec, ctx.production) for m in real_models):
-            reasons.append("a real model is available")
+        level = level_of_model(model, policy)
+        if model.family == "development":
+            if any(not evaluate(m, spec, ctx.production) for m in real_models):
+                reasons.append("a real model is available")
+        else:
+            if level == "low_cost" and low_cost_blocked:
+                reasons.append(low_cost_blocked)
+            if phase["providers"] and model.provider not in phase["providers"]:
+                reasons.append(f"provider not allowed in the {spec.development_phase} phase")
+            if preferred and model not in preferred:
+                reasons.append(f"the {spec.development_phase} phase prefers other models")
+            if not phase["min_level"] <= LEVELS[level] <= phase["max_level"]:
+                reasons.append(f"{level.replace('_', ' ')} is outside the {spec.development_phase} phase's levels "
+                               f"{phase['min_level']}-{phase['max_level']}")
         if reasons:
             excluded.append({"key": model.key, "reasons": reasons})
             continue
-        level = "gpt_oss" if model.family == "gpt_oss" else "development" if model.family == "development" else band(model, policy)
         output_cap = min(max_output, model.max_output_tokens or max_output)
         candidate = Candidate(
-            "gpt_oss" if model.family == "gpt_oss" else "hosted_model", level, model=model,
+            "low_cost_model" if level == "low_cost" else "hosted_model", level, model=model,
             est_input_tokens=est_input, est_output_tokens=min(est_output, output_cap), max_output_tokens=output_cap,
         )
         candidate.expected_cost_usd = model.cost(est_input, candidate.est_output_tokens)
@@ -181,40 +206,8 @@ def build_candidates(spec: TaskSpec, models: list[ModelView], policy: dict, stat
         _probability(candidate, spec, policy, stats, level)
         if model.family == "development":
             candidate.notes.append("Development model: placeholder output, non-production only")
-        candidates.append(candidate)
-
-    # Strategy D: Codex, a coding agent with its own runtime, not an inference endpoint.
-    codex_policy = policy["codex"]
-    codex_reasons = []
-    if not codex_policy["enabled"]:
-        codex_reasons.append("disabled by policy")
-    if spec.task_type not in codex_policy["task_types"]:
-        codex_reasons.append("task type not eligible for Codex")
-    if "autonomous_code_execution" not in spec.permitted_actions:
-        codex_reasons.append("caller did not permit autonomous_code_execution")
-    if spec.execution_environment.get("kind") not in {"aaee_workspace", "builder_sandbox", "cde_workspace"}:
-        codex_reasons.append("no isolated workspace for the agent")
-    if not ctx.codex_runtime:
-        codex_reasons.append("no Codex runtime available")
-    justified = COMPLEXITIES.index(spec.complexity) >= COMPLEXITIES.index(codex_policy["min_complexity"]) or (
-        ctx.quality_failures >= policy["escalation"]["codex_after_failures"]
-    )
-    if not justified:
-        codex_reasons.append(f"not justified: complexity below {codex_policy['min_complexity']} and fewer than "
-                             f"{policy['escalation']['codex_after_failures']} verified failures")
-    if not ctx.codex_model or not ctx.codex_model.pricing_known:
-        codex_reasons.append("Codex model pricing unknown; configure AAEE_CODEX_MODEL with a priced registry model")
-    if codex_reasons:
-        excluded.append({"key": "codex", "reasons": codex_reasons})
-    else:
-        model = ctx.codex_model
-        tokens_in, tokens_out = codex_policy["estimated_input_tokens"], codex_policy["estimated_output_tokens"]
-        candidate = Candidate("codex", "codex", model=model, est_input_tokens=tokens_in, est_output_tokens=tokens_out,
-                              max_output_tokens=tokens_out, latency_ms=codex_policy["typical_latency_ms"])
-        candidate.expected_cost_usd = model.cost(tokens_in, tokens_out)
-        candidate.worst_case_usd = model.cost(int(tokens_in * margin), int(tokens_out * margin))
-        _probability(candidate, spec, policy, stats, "codex")
-        candidate.notes.append(f"Runs in an isolated workspace via {ctx.codex_runtime}")
+        if model in preferred:
+            candidate.notes.append(f"Preferred for the {spec.development_phase} phase")
         candidates.append(candidate)
 
     filtered = []
@@ -225,8 +218,8 @@ def build_candidates(spec: TaskSpec, models: list[ModelView], policy: dict, stat
             reasons.append("already failed for this task")
         if candidate.level < ctx.min_level and candidate.strategy != "deterministic":
             reasons.append("below the escalation level required by earlier failures")
-        if candidate.strategy == "deterministic" and ctx.min_level > 0 and ctx.purpose == "generate":
-            reasons.append("deterministic handling already failed")
+        if candidate.strategy == "deterministic" and ctx.min_level > 0:
+            reasons.append("deterministic handling already failed or does not address this failure")
         if candidate.worst_case_usd > limit + 1e-12:
             reasons.append(f"worst-case ${candidate.worst_case_usd:.4f} exceeds available ${limit:.4f}")
         if spec.latency_target_ms and candidate.latency_ms and candidate.latency_ms > spec.latency_target_ms:
@@ -277,14 +270,12 @@ def plan(spec: TaskSpec, models: list[ModelView], policy: dict, stats: Stats, ct
         chosen = max(ranked, key=lambda r: (r["p_chain"], -r["score"]))
         warnings.append(f"No plan reaches the quality threshold {spec.quality_threshold:.2f}; using the most reliable chain "
                         f"(estimated {chosen['p_chain']:.2f})")
-    if chosen and policy["gpt_oss_first"] and chosen["candidate"].strategy not in {"deterministic", "gpt_oss"}:
-        oss = next((r for r in ranked if r["viable"] and r["candidate"].strategy == "gpt_oss"), None)
+    if chosen and policy["low_cost_first"] and chosen["candidate"].strategy not in {"deterministic", "low_cost_model"}:
+        cheap = next((r for r in ranked if r["viable"] and r["candidate"].strategy == "low_cost_model"), None)
         rival = chosen["candidate"]
-        demonstrably_cheaper = rival.p_source == "observed" and chosen["score"] < oss["score"] * (1 - policy["gpt_oss_displacement_margin"]) \
-            if oss else True
-        if oss and not demonstrably_cheaper:
-            chosen = oss
-            warnings.append("GPT-OSS first: no measured evidence that another model is cheaper per successful task")
+        if cheap and not (rival.p_source == "observed" and chosen["score"] < cheap["score"] * (1 - policy["low_cost_displacement_margin"])):
+            chosen = cheap
+            warnings.append("Low-cost first: no measured evidence that another model is cheaper per successful task")
     if chosen and ctx.purpose == "generate" and chosen["candidate"].strategy != "deterministic":
         deterministic = next((r for r in ranked if r["candidate"].strategy == "deterministic" and r["viable"]), None)
         if deterministic:
@@ -294,10 +285,8 @@ def plan(spec: TaskSpec, models: list[ModelView], policy: dict, stats: Stats, ct
     budget_blocked = [e for e in excluded if any("exceeds available" in r for r in e.get("reasons", []))]
     if chosen:
         candidate = chosen["candidate"]
-        if candidate.strategy == "codex" and policy["codex"]["requires_approval"] and candidate.key not in ctx.approved_keys:
-            approvals.append("codex_execution")
-        if spec.task_type in TEXT_TASKS and candidate.strategy == "codex":
-            warnings.append("Codex chosen for a text task")
+        if candidate.notes and any("Development model" in n for n in candidate.notes):
+            warnings.append("Only the development model is available: output is a placeholder, not AI-generated")
     elif budget_blocked and not ctx.overage_approved:
         approvals.append("budget_overage")
     gates = {"approvals": sorted(set(approvals)), **required_checks(spec)}
@@ -323,17 +312,11 @@ def plan(spec: TaskSpec, models: list[ModelView], policy: dict, stats: Stats, ct
     return result
 
 
-def candidate_from_view(view: dict, models: list[ModelView], codex_model: ModelView | None) -> Candidate | None:
+def candidate_from_view(view: dict, models: list[ModelView]) -> Candidate | None:
     """Rebuild the chosen candidate when executing a stored plan."""
     if view.get("strategy") == "deterministic":
         return Candidate("deterministic", "deterministic", tool=view["tool"], tool_runner=view["tool_runner"], coverage=view.get("coverage"),
                          p_success=view["p_success"])
-    if view.get("strategy") == "codex":
-        if not codex_model:
-            return None
-        return Candidate("codex", "codex", model=codex_model, est_input_tokens=view["estimated_input_tokens"],
-                         est_output_tokens=view["estimated_output_tokens"], max_output_tokens=view["max_output_tokens"],
-                         expected_cost_usd=view["expected_cost_usd"], worst_case_usd=view["worst_case_usd"], p_success=view["p_success"])
     model = next((m for m in models if m.provider == view.get("provider") and m.model_id == view.get("model_id")), None)
     if not model:
         return None

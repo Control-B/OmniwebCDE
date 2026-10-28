@@ -102,7 +102,7 @@ class ModelPolicyInput(BaseModel):
     scope: Literal["platform", "tenant"] = "platform"
     enabled: bool = True
     priority: int = Field(default=0, ge=-100, le=100)
-    family: Literal["gpt_oss", "hosted", "development"] | None = None
+    family: Literal["gpt_oss", "grok", "hosted", "development"] | None = None
     hosting_mode: Literal["first_party_api", "inference_provider", "self_hosted"] | None = None
     validated_input_usd_per_mtok: float | None = Field(default=None, ge=0, le=1_000)
     validated_output_usd_per_mtok: float | None = Field(default=None, ge=0, le=1_000)

@@ -31,6 +31,7 @@ PROVIDERS: dict[str, ProviderSpec] = {
     "openai": ProviderSpec("openai", "OpenAI", "hosted", "openai", "", "https://api.openai.com/v1"),
     "anthropic": ProviderSpec("anthropic", "Anthropic", "hosted", "anthropic", "", "https://api.anthropic.com/v1"),
     "gemini": ProviderSpec("gemini", "Google Gemini", "hosted", "gemini", "gemini/", "https://generativelanguage.googleapis.com/v1beta"),
+    "xai": ProviderSpec("xai", "xAI (Grok)", "hosted", "xai", "xai/", "https://api.x.ai/v1"),
     "openrouter": ProviderSpec("openrouter", "OpenRouter", "hosted", "openrouter", "openrouter/", "https://openrouter.ai/api/v1"),
     "openai_compatible": ProviderSpec("openai_compatible", "OpenAI-compatible endpoint", "self_hosted", "openai", "", "", needs_key=False, needs_base_url=True),
     "ollama": ProviderSpec("ollama", "Ollama", "self_hosted", "ollama_chat", "ollama/", "", needs_key=False, needs_base_url=True),
@@ -78,6 +79,9 @@ def enrich_from_cost_map(spec: ProviderSpec, model: DiscoveredModel) -> Discover
         return model
     if entry.get("mode") not in (None, "chat", "responses"):
         model.capabilities = [*model.capabilities, f"mode:{entry.get('mode')}"]
+    if entry.get("mode") == "responses" and "api:responses" not in model.capabilities:
+        # Only available through the Responses API, not Chat Completions.
+        model.capabilities = [*model.capabilities, "api:responses"]
     model.context_window = model.context_window or entry.get("max_input_tokens")
     model.max_output_tokens = model.max_output_tokens or entry.get("max_output_tokens")
     model.supports_tools = model.supports_tools or bool(entry.get("supports_function_calling"))

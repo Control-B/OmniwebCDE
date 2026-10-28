@@ -57,7 +57,6 @@ function WorkspaceConsole() {
           if (data === '\r') {
             if (input.trim() === 'ls') terminal.write('\r\nREADME.md  backend  frontend  assets  docker-compose.yml')
             else if (input.trim() === 'git status') terminal.write('\r\nOn branch main\r\nnothing to commit, working tree clean')
-            else if (input.trim() === 'codex') terminal.write('\r\n\x1b[38;5;108mCodex CLI ready. Approval mode: on-request\x1b[0m')
             else if (input.trim()) terminal.write(`\r\nbash: ${input.trim()}: command not found`)
             input = ''
             prompt()

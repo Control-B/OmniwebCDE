@@ -8,7 +8,7 @@ complexity and risk. Clients may raise the complexity with a hint but cannot low
 import re
 import uuid
 
-from .contracts import COMPLEXITIES, SENSITIVE_ACTIONS, TaskRequest, TaskSpec
+from .contracts import COMPLEXITIES, PHASE_OF_TASK, SENSITIVE_ACTIONS, TaskRequest, TaskSpec
 from .routing_policy import RISK_ORDER
 from .security import Caller
 
@@ -116,6 +116,7 @@ def classify(request: TaskRequest, identity: Caller, policy: dict, task_id: uuid
         required_capabilities=capabilities,
         min_context_tokens=context_tokens + max_output,
         complexity=complexity,
+        development_phase=request.development_phase or PHASE_OF_TASK[request.task_type],
         risk_level=risk,
         risk_reasons=reasons,
         quality_threshold=max(request.quality_threshold or 0, policy["quality_threshold"][request.task_type]),

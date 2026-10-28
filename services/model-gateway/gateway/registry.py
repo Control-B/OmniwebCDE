@@ -28,6 +28,7 @@ def platform_credential(provider: str, settings: Settings) -> ResolvedCredential
         "openai": (settings.openai_api_key, ""),
         "anthropic": (settings.anthropic_api_key, ""),
         "gemini": (settings.gemini_api_key, ""),
+        "xai": (settings.xai_api_key, ""),
         "openrouter": (settings.openrouter_api_key, ""),
         "openai_compatible": (settings.openai_compatible_api_key, settings.openai_compatible_base_url),
         "ollama": ("", settings.ollama_base_url),

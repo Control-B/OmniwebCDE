@@ -21,9 +21,10 @@ CODE_TASKS = {
 }
 TEXT_TASKS = {"requirement_analysis", "architecture_design", "documentation", "content_generation"}
 
-# Strategy levels form the escalation ladder. Hosted economy models sit beside GPT-OSS so a
-# cheaper hosted model can win on measured cost per success.
-LEVELS = {"deterministic": 0, "gpt_oss": 1, "hosted_economy": 1, "hosted_standard": 2, "hosted_advanced": 3, "codex": 4}
+# Strategy levels form the escalation ladder. Low-cost open-weight and fast models (GPT-OSS,
+# economical Grok models) sit beside hosted economy models, so whichever has the lower
+# measured cost per success wins.
+LEVELS = {"deterministic": 0, "low_cost": 1, "hosted_economy": 1, "hosted_standard": 2, "hosted_advanced": 3}
 
 DEFAULT_POLICY: dict = {
     # Observations needed before measured success rates replace the conservative defaults.
@@ -32,22 +33,39 @@ DEFAULT_POLICY: dict = {
     "default_success": {
         "deterministic_exact": {"trivial": 0.95, "simple": 0.9, "normal": 0.85, "complex": 0.7},
         "deterministic_approximate": {"trivial": 0.6, "simple": 0.5, "normal": 0.4, "complex": 0.25},
-        "gpt_oss": {"trivial": 0.75, "simple": 0.65, "normal": 0.5, "complex": 0.3},
+        "low_cost": {"trivial": 0.75, "simple": 0.65, "normal": 0.5, "complex": 0.3},
         "hosted_economy": {"trivial": 0.75, "simple": 0.65, "normal": 0.5, "complex": 0.3},
         "hosted_standard": {"trivial": 0.85, "simple": 0.8, "normal": 0.7, "complex": 0.5},
         "hosted_advanced": {"trivial": 0.9, "simple": 0.88, "normal": 0.8, "complex": 0.68},
-        "codex": {"trivial": 0.7, "simple": 0.72, "normal": 0.75, "complex": 0.72},
         "development": {"trivial": 0.5, "simple": 0.5, "normal": 0.5, "complex": 0.5},
     },
     # Required probability that the planned chain of attempts succeeds.
     "quality_threshold": {t: (0.9 if t in {"security_review", "deployment_preparation"} else 0.8) for t in TASK_TYPES},
     # Blended price bands in USD per million tokens ((3 * input + output) / 4).
     "bands": {"economy_max": 1.0, "standard_max": 6.0},
-    "gpt_oss_first": True,
-    # How much cheaper (measured) another candidate must be before it displaces GPT-OSS.
-    "gpt_oss_displacement_margin": 0.15,
-    "gpt_oss_excluded_task_types": ["security_review"],
-    "gpt_oss_max_risk": "medium",
+    # Model families treated as the low-cost first stage, and the blended price ceiling a model of
+    # those families must stay under to count as low-cost. Pricier models of the same family
+    # (for example flagship Grok models) are ranked in the hosted bands by their price.
+    "low_cost_families": ["gpt_oss", "grok"],
+    "low_cost_max_blended_usd": 1.5,
+    "low_cost_first": True,
+    # How much cheaper (measured) another candidate must be before it displaces the low-cost stage.
+    "low_cost_displacement_margin": 0.15,
+    "low_cost_excluded_task_types": ["security_review"],
+    "low_cost_max_risk": "medium",
+    # Per development phase: allowed providers (empty = any), preferred registry models
+    # ("provider/model_id", set by an administrator and checked against the live registry),
+    # and the lowest and highest ladder levels models may use in that phase.
+    "phases": {
+        "discovery": {"providers": [], "preferred_models": [], "min_level": 1, "max_level": 2},
+        "architecture": {"providers": [], "preferred_models": [], "min_level": 2, "max_level": 3},
+        "scaffolding": {"providers": [], "preferred_models": [], "min_level": 1, "max_level": 3},
+        "implementation": {"providers": [], "preferred_models": [], "min_level": 1, "max_level": 3},
+        "debugging": {"providers": [], "preferred_models": [], "min_level": 1, "max_level": 3},
+        "testing": {"providers": [], "preferred_models": [], "min_level": 1, "max_level": 3},
+        "security_review": {"providers": [], "preferred_models": [], "min_level": 2, "max_level": 3},
+        "release": {"providers": [], "preferred_models": [], "min_level": 2, "max_level": 3},
+    },
     # Base complexity and risk per task type; the classifier raises them from evidence.
     "base_complexity": {
         "requirement_analysis": "simple", "architecture_design": "normal", "application_scaffolding": "normal",
@@ -77,17 +95,6 @@ DEFAULT_POLICY: dict = {
     "escalation": {
         "max_identical_failures": 2,
         "provider_fallbacks": 3,
-        "codex_after_failures": 2,
-    },
-    "codex": {
-        "enabled": True,
-        "task_types": sorted(CODE_TASKS - {"database_generation"}),
-        "min_complexity": "complex",
-        "requires_approval": True,
-        "max_duration_seconds": 900,
-        "estimated_input_tokens": 150_000,
-        "estimated_output_tokens": 15_000,
-        "typical_latency_ms": 120_000,
     },
     "human_review_task_types": [],
 }
@@ -118,8 +125,13 @@ def validate_config(config: dict) -> dict:
     for value in merged["quality_threshold"].values():
         if not 0 <= float(value) <= 1:
             raise ValueError("quality_threshold values must be probabilities")
-    if merged["gpt_oss_max_risk"] not in RISK_ORDER:
-        raise ValueError("gpt_oss_max_risk must be a risk level")
+    if merged["low_cost_max_risk"] not in RISK_ORDER:
+        raise ValueError("low_cost_max_risk must be a risk level")
+    for name, phase in merged["phases"].items():
+        if not 1 <= int(phase["min_level"]) <= int(phase["max_level"]) <= 3:
+            raise ValueError(f"phases.{name}: levels must satisfy 1 <= min_level <= max_level <= 3")
+        if any(not isinstance(m, str) or m.count("/") < 1 for m in phase["preferred_models"]):
+            raise ValueError(f"phases.{name}.preferred_models must be provider/model_id strings")
     return merged
 
 

@@ -102,7 +102,7 @@ class UsageEvent(Base):
     idempotency_key: Mapped[str] = mapped_column(String(120))
     tenant_id: Mapped[uuid.UUID] = mapped_column(index=True)
     execution_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("executions.id"), index=True)
-    source: Mapped[str] = mapped_column(String(24))  # gateway | codex | tool | workspace_runner
+    source: Mapped[str] = mapped_column(String(24))  # gateway | tool
     billing_model: Mapped[str] = mapped_column(String(16), default="platform")
     input_tokens: Mapped[int] = mapped_column(Integer, default=0)
     output_tokens: Mapped[int] = mapped_column(Integer, default=0)
@@ -132,7 +132,7 @@ class Approval(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id"), index=True)
     tenant_id: Mapped[uuid.UUID] = mapped_column(index=True)
-    kind: Mapped[str] = mapped_column(String(40))  # escalation | codex | budget_overage | sensitive_action | security_review
+    kind: Mapped[str] = mapped_column(String(40))  # escalation | budget_overage | sensitive_action | human_review
     status: Mapped[str] = mapped_column(String(16), default="pending")
     reasons: Mapped[list] = mapped_column(JSON, default=list)
     plan_digest: Mapped[str] = mapped_column(String(64))
@@ -171,7 +171,7 @@ class BudgetCounter(Base):
     scope_id: Mapped[str] = mapped_column(String(80))
     period: Mapped[str] = mapped_column(String(16))  # YYYY-MM or "lifetime"
     reserved_usd: Mapped[float] = mapped_column(Float, default=0)
-    # Spend that does not pass through the gateway (Codex, engine tools).
+    # Spend that does not pass through the gateway (engine and caller-side tools).
     external_spent_usd: Mapped[float] = mapped_column(Float, default=0)
     # All spend recorded by AAEE, used for AAEE-owned scopes.
     spent_usd: Mapped[float] = mapped_column(Float, default=0)

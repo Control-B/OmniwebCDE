@@ -20,11 +20,6 @@ Current boundaries:
 - Keycloak configuration is a local bootstrap realm, not a production identity policy.
 - PostgreSQL RLS deployment policies, KMS integration, distributed rate limiting, idle
   shutdown, and actual-provider billing reconciliation remain operational follow-up work.
-- Codex is installed from a pinned package, but a production coding-agent supervisor and
-  structured app-server event bridge are not yet connected to the UI.
-- Codex app-server support wording is currently inconsistent across OpenAI documentation.
-  The stdio adapter is version-pinned and structured, but must be compatibility-tested
-  against generated schemas before production use.
 - VS Code and Cursor local access require Coder-compatible client/extension setup; it is
   intentionally presented as guided setup, not zero-configuration support.
 

@@ -49,8 +49,8 @@ CODE_OUTPUT_TASKS = {
 }
 # Mandatory gates that apply whatever strategy produced the output.
 MANDATORY = {task: (["secrets_scan", "path_policy"] if task in CODE_OUTPUT_TASKS else []) for task in CRITERIA}
-DENIED_PATHS = [".git/*", ".github/*", ".gitlab-ci.yml", ".env", ".env.*", "*.pem", "*.key", "id_rsa*", "**/secrets/*", ".codex/*",
-                ".codex-home/*", "*/.env", "*/.env.*"]
+DENIED_PATHS = [".git/*", ".github/*", ".gitlab-ci.yml", ".env", ".env.*", "*.pem", "*.key", "id_rsa*", "**/secrets/*",
+                "*/.env", "*/.env.*"]
 
 
 @dataclass

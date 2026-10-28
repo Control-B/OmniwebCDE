@@ -18,7 +18,7 @@ from .models import ModelPolicy
 from .security import Caller
 
 HOSTING = {
-    "openai": "first_party_api", "anthropic": "first_party_api", "gemini": "first_party_api",
+    "openai": "first_party_api", "anthropic": "first_party_api", "gemini": "first_party_api", "xai": "first_party_api",
     "openrouter": "inference_provider", "openai_compatible": "self_hosted", "ollama": "self_hosted",
     "omniweb_dev": "development",
 }
@@ -30,7 +30,7 @@ class ModelView:
     provider: str
     model_id: str
     display_name: str
-    family: str  # gpt_oss | hosted | development
+    family: str  # gpt_oss | grok | hosted | development
     hosting_mode: str
     capabilities: set[str]
     context_window: int | None
@@ -93,6 +93,8 @@ def family_of(provider: str, model_id: str) -> str:
         return "development"
     if "gpt-oss" in model_id.lower():
         return "gpt_oss"
+    if provider == "xai" or "grok" in model_id.lower():
+        return "grok"
     return "hosted"
 
 

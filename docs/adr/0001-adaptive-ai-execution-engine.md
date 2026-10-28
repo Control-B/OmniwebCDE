@@ -8,21 +8,27 @@ Omniweb has two products that call AI: the full-stack application builder and th
 development environment (CDE). Both need to pick the cheapest way to finish a task
 *successfully*, which is not the same as the cheapest model per token. A task that a
 deterministic template can do should cost nothing. A routine task should go to a low-cost
-model such as GPT-OSS. Stronger models and autonomous coding agents should be used only
-when the task, measured quality, or verified failures justify them.
+model such as GPT-OSS or an economical Grok model. Stronger OpenAI or Grok models should
+be used only when the development phase, measured quality, or verified failures justify
+them.
+
+**Revision (2026-10-28):** Omniweb no longer uses Codex. The Codex strategy, its adapter, and
+the Codex CLI in the workspace template were removed. Model choice now follows the project's
+development phase, using OpenAI models through the platform's OpenAI API key, plus
+low-cost GPT-OSS and Grok (xAI) models.
 
 ## 1. Existing implementation inventory
 
 | Concern | Where | State before this ADR |
 | --- | --- | --- |
-| Provider adapters, LiteLLM | `services/model-gateway/gateway/inference.py`, `providers.py` | Working. OpenAI, Anthropic, Gemini, OpenRouter, OpenAI-compatible, Ollama. Chat Completions only. |
+| Provider adapters, LiteLLM | `services/model-gateway/gateway/inference.py`, `providers.py` | Working. OpenAI, Anthropic, Gemini, OpenRouter, OpenAI-compatible, Ollama. Chat Completions only. No xAI provider. |
 | Model discovery and registry | `gateway/registry.py`, table `model_registry` | Working. Discovery via each provider's list-models API, pricing from the provider or LiteLLM's cost map, `pricing_source` marks unknown pricing. |
 | Per-call usage ledger | gateway table `usage_records` | Working. Tokens, cost, latency, attempt, billing model (platform or customer key). |
 | Budgets | gateway `budgets.py` | Organization monthly and project budgets, hard limits and alerts, checked against actual spend. No reservations. |
 | Tier routing and fallback | gateway `routing.py` | Price-band tiers with bounded escalation inside one request. |
 | Service authentication | `backend/app/services/gateway.py`, `gateway/security.py` | Short-lived HS256 service tokens minted by the control plane. |
 | LangGraph orchestration | `backend/app/builder/pipeline.py` | Builder pipeline understand → plan → apply → verify → repair → finalize with durable run state. Calls the gateway directly. |
-| Codex integration | `backend/app/coding_agents/codex.py` | A structured Codex app-server JSON-RPC adapter. Not wired to any API. |
+| Codex integration | `backend/app/coding_agents/codex.py` | A Codex app-server adapter, not wired to any API. Removed in this revision. |
 | Coder workspaces | `backend/app/adapters/coder.py`, `services/workspaces.py` | Workspace lifecycle and access tokens, mocked by default. |
 | Generation and build pipeline | `backend/app/builder/` | Templates, sandboxed checks (namespace sandbox), previews. |
 | Billing and usage UI | `/usage`, `projects_api.py` | Reads gateway usage. |
@@ -37,9 +43,9 @@ when the task, measured quality, or verified failures justify them.
 | Unified task contract | None existed; callers send raw chat messages. |
 | Deterministic-first execution | The builder had a deterministic planner but called the model *first* and used the planner only as a fallback. |
 | Expected cost per successful task | Routing compared token prices only. |
-| GPT-OSS strategy | GPT-OSS models were reachable through OpenRouter, OpenAI-compatible servers, or Ollama but were not treated as a distinct strategy. |
+| Low-cost strategy | GPT-OSS models were reachable through OpenRouter, OpenAI-compatible servers, or Ollama but were not a distinct strategy. Grok was not supported. |
+| Phase-aware model choice | Nothing tied model choice to the development phase. |
 | Responses API | Not supported by the gateway. |
-| Codex as a separate strategy | The adapter existed but had no budget, approval, isolation, or accounting. |
 | Validation evidence and acceptance criteria | The builder ran checks but did not persist evidence against acceptance criteria shared with other callers. |
 | Escalation controller | Only in-request tier fallback; no failure classification, duplicate-failure detection, or file leases. |
 | Hierarchical budgets with reservations | No platform, user, task, or agent-execution budgets; no reservations, so concurrent tasks could overspend. |
@@ -53,8 +59,8 @@ when the task, measured quality, or verified failures justify them.
 Builder (LangGraph) ─┐                               ┌─ Model gateway ── providers (OpenAI Responses/Chat,
 CDE agent tasks ─────┼─► Control plane ─► AAEE ──────┤                    Anthropic, Gemini, OpenRouter,
 Future agents ───────┘   (authN, authZ,   (decide,    │                    GPT-OSS endpoints, Ollama)
-                          workspaces)      budget,    ├─ Codex runtime (isolated workspace, exec JSONL)
-                                           account)   └─ Engine tools (gitleaks, semgrep, ruff format…)
+                          workspaces)      budget,    │                    xAI Grok, GPT-OSS endpoints, Ollama)
+                                           account)   └─ Engine tools (gitleaks, text replace, ruff format…)
 ```
 
 - **Control plane** (`backend`) keeps authentication, workspace authorization, projects,
@@ -64,15 +70,14 @@ Future agents ───────┘   (authN, authZ,   (decide,    │       
 - **AAEE** (`services/ai-execution-engine`, package `aaee`) is new and separately
   deployable. It owns the task contract, classification, the registry *overlay*, the
   routing policy, planning, escalation, budgets with reservations, the task-level usage
-  ledger, validation evidence, the Codex adapter, performance statistics, benchmarks, and
-  analytics.
+  ledger, validation evidence, performance statistics, benchmarks, and analytics.
 - **Model gateway** stays the only holder of provider credentials and the only component
   that calls LLM providers. It remains the source of truth for discovered models, raw
   pricing, the per-call usage ledger, and organization and project budget limits.
   AAEE never receives provider keys.
 - **Build workspaces** stay where they are. The builder's sandbox runs builds, tests, and
-  previews. CDE tasks run in the user's Coder workspace. AAEE's own isolated workspace is
-  used only for Codex runs on builder artifacts.
+  previews. For CDE tasks, the control plane applies the returned file edits in the user's
+  Coder workspace and runs the checks there. AAEE never executes generated code.
 
 ### Not duplicated
 
@@ -81,14 +86,12 @@ Future agents ───────┘   (authN, authZ,   (decide,    │       
   overrides.
 - **Per-call ledger.** Every LLM call still lands in the gateway's `usage_records`, now with
   `task_id` and `execution_id`. AAEE's ledger records attempts, strategies, validation, and
-  non-gateway costs (Codex, tools).
+  non-gateway costs (tools).
 - **Organization and project limits.** These live in the gateway. AAEE reads limit and
   spend from it, then adds reservations on top. Platform, user, task, and agent-execution
   budgets are new and live in AAEE.
 - **Orchestration.** The builder keeps its LangGraph graph and calls AAEE from its nodes.
   AAEE does not run a second agent graph.
-- **Codex.** The CDE workspace runner reuses `CodexAppServerAdapter`. AAEE's runner uses
-  the documented `codex exec --json` event stream for bounded, non-interactive runs.
 
 ## 4. Integration architecture
 
@@ -102,12 +105,11 @@ Future agents ───────┘   (authN, authZ,   (decide,    │       
    successful task. It returns the next action:
    - `deterministic`: the caller runs a registered tool, such as the builder's spec rules. It costs $0.
    - `result`: AAEE ran an inference strategy through the gateway and returns validated output.
-   - `workspace_agent`: the caller runs Codex in its workspace under a grant. This is the CDE path.
    - `approval_required`: a human must approve before anything runs.
 3. The caller runs its checks in its own isolated workspace and submits evidence. AAEE
    evaluates it against the task type's acceptance criteria and persists it. On failure,
-   the escalation controller classifies the error and picks a deterministic repair, a
-   stronger model, or Codex, or it stops with a diagnostic report.
+   the escalation controller classifies the error and picks a deterministic repair or a
+   stronger model, or it stops with a diagnostic report.
 4. Usage is reconciled idempotently. Reservations are released on completion, failure, or
    cancellation.
 
@@ -123,6 +125,21 @@ a Temporal-backed implementation can replace it without API changes.
 
 `GET /v1/tasks/{id}/events` is a server-sent-event stream backed by the `task_events`
 table. It is resumable with `Last-Event-ID`. The control plane proxies it to browsers.
+
+### Development phases and low-cost models
+
+Every task has a development phase: discovery, architecture, scaffolding, implementation,
+debugging, testing, security review, or release. The phase defaults from the task type, and
+callers may name another. A phase policy sets the ladder levels models may use, the allowed
+providers, and preferred registry models. For example, an administrator can pin specific
+OpenAI models for architecture and debugging. A requested phase can never go below the
+minimum level of the task type's own phase. Preferred models must exist in the live
+registry; AAEE never invents model IDs.
+
+The low-cost stage combines the `gpt_oss` and `grok` families, but a model only counts as
+low-cost when its blended price is under the policy ceiling. Pricier Grok models are ranked
+in the hosted bands by price. Within the stage, GPT-OSS and Grok compete on expected cost per
+successful task.
 
 ## 5. Database changes
 
@@ -144,10 +161,10 @@ whose cost map mode is `responses` are called through the OpenAI Responses API.
 
 | Milestone | Scope |
 | --- | --- |
-| 1. Shared execution gateway | Service skeleton, task contract, classifier, registry overlay, capability evaluator, routing policy, baseline planner, gateway client, unit tests |
-| 2. GPT-OSS-first generation | Deterministic and GPT-OSS strategies, template awareness, validation engine and evidence, basic repair, task ledger |
+| 1. Shared execution gateway | Service skeleton, task contract, classifier, registry overlay, capability evaluator, routing policy, baseline planner, gateway client, xAI provider, unit tests |
+| 2. Low-cost-first generation | Deterministic and low-cost (GPT-OSS, Grok) strategies, template awareness, validation engine and evidence, basic repair, task ledger |
 | 3. OpenAI escalation | Responses API in the gateway, escalation controller, retry policies, hierarchical budgets with reservations |
-| 4. Codex specialist | Codex exec runner, isolated workspace, bounded runs, approvals, accounting |
+| 4. Phase-aware OpenAI routing | Development-phase policies (levels, providers, preferred models), approvals, file leases, accounting |
 | 5. Product integration | Builder and CDE on AAEE, status APIs, streaming events |
 | 6. Optimization | Performance evaluator, benchmarks, shadow policies and experiments, analytics, admin dashboard |
 

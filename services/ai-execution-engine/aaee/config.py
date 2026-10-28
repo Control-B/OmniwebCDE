@@ -21,16 +21,6 @@ class Settings(BaseSettings):
     gateway_timeout_seconds: float = 150
     registry_cache_seconds: float = 30
 
-    # Codex. The API key is a dedicated, spend-limited key used only inside the Codex process.
-    codex_enabled: bool = True
-    codex_runner: str = "exec"  # "exec" (codex CLI JSONL events) or "scripted" (tests and demos)
-    codex_executable: str = "codex"
-    codex_model: str = ""  # "provider/model_id" from the gateway registry; empty = Codex default
-    codex_api_key: str = Field(default="", repr=False)
-    codex_api_key_file: str = ""  # secret-manager mount; preferred over codex_api_key
-    codex_max_duration_seconds: int = 900
-    codex_max_events: int = 5_000
-
     # Security scanners used by the validation engine when present on PATH or in scanner_path.
     scanner_path: str = str(Path.home() / "go" / "bin")
 

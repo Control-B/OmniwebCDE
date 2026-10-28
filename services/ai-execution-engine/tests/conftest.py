@@ -10,8 +10,6 @@ _db = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
 _data = tempfile.mkdtemp(prefix="aaee-test-")
 os.environ["AAEE_DATABASE_URL"] = f"sqlite+aiosqlite:///{_db.name}"
 os.environ["AAEE_DATA_DIR"] = _data
-os.environ["AAEE_CODEX_RUNNER"] = "scripted"
-os.environ["AAEE_CODEX_MODEL"] = "openai/gpt-5-codex"
 os.environ["AAEE_REGISTRY_CACHE_SECONDS"] = "0"
 
 from aaee.inference_gateway import ChatResult, GatewayError  # noqa: E402
@@ -31,9 +29,12 @@ MODELS = [
     {"provider": "openai", "model_id": "gpt-5", "scope": "platform", "capabilities": ["structured_output", "tools", "reasoning"],
      "context_window": 400_000, "max_output_tokens": 128_000, "supports_structured_output": True,
      "input_usd_per_mtok": 1.25, "output_usd_per_mtok": 10.0, "pricing_source": "litellm", "billing_model": "platform"},
-    {"provider": "openai", "model_id": "gpt-5-codex", "scope": "platform", "capabilities": ["structured_output", "tools", "api:responses"],
-     "context_window": 400_000, "max_output_tokens": 128_000, "supports_structured_output": True,
-     "input_usd_per_mtok": 1.25, "output_usd_per_mtok": 10.0, "pricing_source": "litellm", "billing_model": "platform"},
+    {"provider": "xai", "model_id": "grok-code-fast-1", "scope": "platform", "capabilities": ["structured_output", "tools"],
+     "context_window": 256_000, "max_output_tokens": 32_000, "supports_structured_output": True,
+     "input_usd_per_mtok": 0.2, "output_usd_per_mtok": 1.5, "pricing_source": "litellm", "billing_model": "platform"},
+    {"provider": "xai", "model_id": "grok-4", "scope": "platform", "capabilities": ["structured_output", "tools", "reasoning"],
+     "context_window": 256_000, "max_output_tokens": 64_000, "supports_structured_output": True,
+     "input_usd_per_mtok": 3.0, "output_usd_per_mtok": 15.0, "pricing_source": "litellm", "billing_model": "platform"},
     {"provider": "openrouter", "model_id": "mystery/unpriced-model", "scope": "platform", "capabilities": [],
      "context_window": 64_000, "max_output_tokens": 8_000, "input_usd_per_mtok": None, "output_usd_per_mtok": None,
      "pricing_source": "unknown", "billing_model": "platform"},

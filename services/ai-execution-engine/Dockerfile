@@ -1,8 +1,6 @@
 FROM python:3.12-slim
 
-# git is used to snapshot Codex workspaces; the Codex CLI itself is installed separately
-# (npm i -g @openai/codex) only where the Codex strategy is enabled.
-RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
 RUN useradd --create-home --uid 10001 aaee
 WORKDIR /app
 COPY pyproject.toml ./

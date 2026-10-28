@@ -41,22 +41,17 @@ availability is not a capacity reservation. Production reconciliation must honor
 `Retry-After`, inspect action completion, and distinguish authentication, quota, capacity,
 and bootstrap failures.
 
-## Codex
+## Model providers
 
-Codex integration uses `codex app-server`, not terminal scraping. The adapter speaks the
-documented newline-delimited JSON-RPC protocol over stdio:
+AI work goes through the model gateway, which holds the provider keys. Omniweb does not use
+Codex or any other coding-agent CLI. Models are chosen per task and development phase from
+the providers configured in the gateway:
 
-- `initialize` / `initialized`
-- `model/list` before presenting or accepting model IDs
-- `thread/start`, `turn/start`, `thread/read`, and `turn/interrupt`
-- streamed item and turn notifications
-- server-initiated command/file approval requests with explicit decisions
+- **OpenAI** (`GATEWAY_OPENAI_API_KEY`). Models whose LiteLLM cost-map mode is `responses`
+  are called through the Responses API; the rest through Chat Completions.
+- **xAI Grok** (`GATEWAY_XAI_API_KEY`). Models are discovered from `GET https://api.x.ai/v1/models`.
+  Prices come from LiteLLM's bundled cost map; a Grok model missing from it stays
+  `unknown` until an administrator validates its price in the AI execution engine.
+- **GPT-OSS** through OpenRouter, an OpenAI-compatible endpoint, or Ollama.
 
-No arbitrary routing, monetary cap, or token-budget control is assumed. The model selector
-must reflect the live `model/list` catalog and its supported reasoning efforts; catalog
-presence does not prove account entitlement. Pin Codex and generate schemas from that exact
-binary. Current documentation is inconsistent about app-server production support, so
-stdio is treated as the least ambiguous transport and must pass compatibility tests before
-production rollout.
-
-Source: [Codex app-server](https://developers.openai.com/codex/app-server).
+Sources: [xAI API](https://docs.x.ai/docs/api-reference), [OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses).

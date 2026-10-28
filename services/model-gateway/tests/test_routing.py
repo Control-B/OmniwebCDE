@@ -110,3 +110,34 @@ def test_discovery_parsers():
 
     openai = parse_openai_like({"data": [{"id": "gpt-x"}, {"id": "text-embedding-3-small"}, {"id": "whisper-1"}]})
     assert [m.model_id for m in openai] == ["gpt-x"]
+
+
+def test_responses_api_output_is_parsed():
+    from gateway.inference import parse_responses_output
+
+    response = {
+        "output": [
+            {"type": "reasoning", "summary": []},
+            {"type": "message", "content": [{"type": "output_text", "text": "Hello "}, {"type": "output_text", "text": "world"}]},
+        ],
+        "usage": {"input_tokens": 120, "output_tokens": 8, "input_tokens_details": {"cached_tokens": 100}},
+    }
+    completion = parse_responses_output(response)
+    assert completion.content == "Hello world"
+    assert (completion.input_tokens, completion.output_tokens, completion.cached_tokens) == (120, 8, 100)
+
+
+def test_xai_is_a_discoverable_hosted_provider():
+    from gateway.providers import (
+        PROVIDERS,
+        DiscoveredModel,
+        _finish,
+        litellm_model_name,
+        parse_openai_like,
+    )
+
+    assert PROVIDERS["xai"].kind == "hosted"
+    models = _finish(PROVIDERS["xai"], parse_openai_like({"data": [{"id": "grok-code-fast-1"}, {"id": "grok-2-image-1212"}]}))
+    assert [m.model_id for m in models] == ["grok-code-fast-1"]
+    assert isinstance(models[0], DiscoveredModel)
+    assert litellm_model_name("xai", "grok-code-fast-1") == "xai/grok-code-fast-1"
