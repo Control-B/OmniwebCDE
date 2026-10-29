@@ -135,6 +135,38 @@ def test_missing_requirements_require_review_instead_of_invention(client, local_
     assert revision["job"] is None
 
 
+def test_failed_engineering_job_can_be_retried_without_new_revision(
+    client, local_engineering, monkeypatch
+):
+    async def fail_generate(_settings, _body):
+        raise service.EngineeringUnavailable("CAD worker timeout")
+
+    monkeypatch.setattr(service, "generate", fail_generate)
+    row = project(client)
+    created = client.post(
+        "/api/v1/engineering/designs",
+        json={
+            "project_id": row["id"],
+            "prompt": "Design a steel plate 120 mm long, 80 mm wide, 6 mm thick.",
+            "idempotency_key": f"engineering-retry-{uuid.uuid4().hex}",
+        },
+    ).json()
+    _, failed = wait_design(client, created["id"])
+    assert failed["status"] == "failed"
+    assert failed["job"]["attempts"] == 1
+
+    async def generate(_settings, body):
+        return cad_generate(GenerateRequest(**body)).model_dump(mode="json")
+
+    monkeypatch.setattr(service, "generate", generate)
+    retry = client.post(f"/api/v1/engineering/jobs/{failed['job']['id']}/retry")
+    assert retry.status_code == 202, retry.text
+    design, recovered = wait_design(client, created["id"])
+    assert recovered["status"] == "validated"
+    assert recovered["job"]["attempts"] == 2
+    assert design["current_revision"] == 1
+
+
 def test_engineering_feedback_requires_authorized_evidence(client, local_engineering):
     row = project(client)
     created = client.post(

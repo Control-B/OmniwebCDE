@@ -347,6 +347,69 @@ async def create_revision(
     return await revision_view(db, revision)
 
 
+async def owned_job(
+    db: AsyncSession, principal: Principal, job_id: uuid.UUID
+) -> tuple[EngineeringJob, EngineeringDesign, DesignRevision]:
+    job = await db.scalar(
+        select(EngineeringJob).where(
+            EngineeringJob.id == job_id,
+            EngineeringJob.organization_id == principal.organization_id,
+        )
+    )
+    if not job:
+        raise HTTPException(status_code=404, detail="Engineering job not found")
+    design = await owned_design(db, principal, job.design_id, write=True)
+    revision = await db.get(DesignRevision, job.revision_id)
+    return job, design, revision
+
+
+@router.post("/jobs/{job_id}/retry", status_code=status.HTTP_202_ACCEPTED)
+async def retry_job(
+    job_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_principal),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    job, design, revision = await owned_job(db, principal, job_id)
+    if job.status not in {"failed", "dead_letter"}:
+        raise HTTPException(status_code=409, detail="Only failed engineering jobs can be retried")
+    if job.attempts >= settings.engineering_max_job_attempts:
+        raise HTTPException(
+            status_code=409,
+            detail="Engineering job reached its retry limit and requires operator review",
+        )
+    job.status = "queued"
+    job.error = None
+    job.started_at = None
+    job.finished_at = None
+    revision.status = "queued"
+    design.status = "generating"
+    audit(db, principal, "engineering.job.retry", "engineering_job", str(job.id))
+    await db.commit()
+    worker.launch(job.id)
+    return {"id": str(job.id), "status": job.status, "attempts": job.attempts}
+
+
+@router.post("/jobs/{job_id}/cancel")
+async def cancel_job(
+    job_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_principal),
+) -> dict:
+    job, design, revision = await owned_job(db, principal, job_id)
+    if job.status not in {"queued", "running"}:
+        raise HTTPException(status_code=409, detail="Only active engineering jobs can be cancelled")
+    job.status = "cancelled"
+    job.error = "Cancelled by user"
+    job.finished_at = datetime.now(UTC)
+    revision.status = "cancelled"
+    design.status = "needs_attention"
+    audit(db, principal, "engineering.job.cancel", "engineering_job", str(job.id))
+    await db.commit()
+    worker.cancel(job.id)
+    return {"id": str(job.id), "status": job.status}
+
+
 @router.post("/designs/{design_id}/approval-request", status_code=status.HTTP_201_CREATED)
 async def request_approval(
     design_id: uuid.UUID,

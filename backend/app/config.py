@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     engineering_service_url: str = "http://127.0.0.1:8040"
     engineering_job_timeout_seconds: int = 120
     engineering_max_concurrent_jobs: int = 2
+    engineering_max_job_attempts: int = 3
     engineering_max_artifact_bytes: int = 50_000_000
     # User IDs or emails allowed to manage platform-wide routing policy and pricing.
     platform_admins: str = ""

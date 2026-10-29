@@ -120,7 +120,11 @@ async def execute(job_id: uuid.UUID) -> None:
                 if job:
                     revision = await db.get(DesignRevision, job.revision_id)
                     design = await db.get(EngineeringDesign, job.design_id)
-                    job.status = "failed"
+                    job.status = (
+                        "dead_letter"
+                        if job.attempts >= settings.engineering_max_job_attempts
+                        else "failed"
+                    )
                     job.error = str(exc)[:500]
                     job.duration_seconds = round(time.monotonic() - started, 6)
                     job.finished_at = datetime.now(UTC)
@@ -135,6 +139,12 @@ def launch(job_id: uuid.UUID) -> None:
     task = _running.get(job_id)
     if not task or task.done():
         _running[job_id] = asyncio.create_task(execute(job_id))
+
+
+def cancel(job_id: uuid.UUID) -> None:
+    task = _running.get(job_id)
+    if task and not task.done():
+        task.cancel()
 
 
 async def resume_all() -> None:
