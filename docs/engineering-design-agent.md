@@ -2,7 +2,7 @@
 
 ## Repository findings and integration decision
 
-Omniweb already uses a TanStack Start frontend, FastAPI control plane, SQLAlchemy/Alembic
+Omniweb already uses a TanStack Start frontend, FastAPI control plane, SQLAlchemy with Alembic
 metadata, PostgreSQL, a content-addressed artifact store, LangGraph orchestration, the
 Adaptive AI Execution Engine (AAEE), project-scoped authorization, approvals, audit
 events, and a bidirectional capability-evolution graph. The engineering capability
