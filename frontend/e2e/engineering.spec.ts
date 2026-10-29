@@ -9,6 +9,13 @@ test('generates, previews, validates, and revises a real engineering design', as
   await page.goto(`/projects/${projectId}/engineering`)
 
   await expect(page.getByRole('heading', { name: 'Engineering Design' })).toBeVisible()
+  await page.getByRole('button', { name: 'Play Engineering CAD workspace walkthrough' }).click()
+  const walkthrough = page.getByRole('dialog', { name: 'Engineering CAD workspace walkthrough' })
+  await expect(walkthrough).toBeVisible()
+  await expect(walkthrough.locator('video')).toHaveAttribute('poster', '/media/engineering-cad-workspace-poster.jpg')
+  await expect(walkthrough.locator('source')).toHaveAttribute('src', '/media/engineering-cad-workspace-walkthrough.mp4')
+  await page.getByRole('button', { name: 'Close walkthrough' }).click()
+  await expect(walkthrough).toBeHidden()
   await page.getByLabel('Describe the mechanical component').fill(
     `Design an L-shaped steel mounting bracket, 200 mm long, 80 mm wide, 6 mm thick, with four 10 mm mounting holes. E2E ${Date.now()}`,
   )

@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, createFileRoute } from '@tanstack/react-router'
 import {
   AlertTriangle, ArrowLeft, Box, CheckCircle2, Download, DraftingCompass,
-  Eye, FileText, Grid3X3, History, LoaderCircle, RefreshCcw, RotateCcw, Save,
+  Eye, FileText, Grid3X3, History, LoaderCircle, Play, RefreshCcw, RotateCcw, Save,
   ShieldCheck, XCircle,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
@@ -77,6 +77,8 @@ function EngineeringWorkspace() {
         <div className="eng-status-key"><ShieldCheck size={16} /><span>Level 1</span><small>Geometry validation</small></div>
       </header>
 
+      <WalkthroughCard />
+
       <section className="eng-prompt">
         <textarea aria-label="Describe the mechanical component" value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={3} />
         <button className="growth-primary" type="button" disabled={create.isPending || prompt.trim().length < 3} onClick={() => create.mutate()}>
@@ -106,6 +108,47 @@ function EngineeringWorkspace() {
         </section>
       </div>
     </main>
+  )
+}
+
+function WalkthroughCard() {
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    if (!open) return
+    const close = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false) }
+    window.addEventListener('keydown', close)
+    return () => window.removeEventListener('keydown', close)
+  }, [open])
+  return (
+    <>
+      <button className="eng-walkthrough-card" type="button" onClick={() => setOpen(true)} aria-label="Play Engineering CAD workspace walkthrough">
+        <span className="eng-walkthrough-thumb">
+          <img src="/media/engineering-cad-workspace-poster.jpg" alt="" />
+          <span><Play size={17} fill="currentColor" /></span>
+        </span>
+        <span className="eng-walkthrough-copy">
+          <small>Product walkthrough · 51 seconds</small>
+          <strong>See the Engineering CAD workspace in action</strong>
+          <span>3D interaction, parametric revisions, drawings, validation, and exports.</span>
+        </span>
+        <span className="eng-walkthrough-play">Watch video <Play size={13} fill="currentColor" /></span>
+      </button>
+      {open && (
+        <div className="eng-video-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false) }}>
+          <section className="eng-video-modal" role="dialog" aria-modal="true" aria-labelledby="engineering-walkthrough-title">
+            <header>
+              <div><small>Omniweb Engineering Design</small><h2 id="engineering-walkthrough-title">Engineering CAD workspace walkthrough</h2></div>
+              <button type="button" onClick={() => setOpen(false)} aria-label="Close walkthrough"><XCircle size={20} /></button>
+            </header>
+            <video controls autoPlay preload="metadata" poster="/media/engineering-cad-workspace-poster.jpg">
+              <source src="/media/engineering-cad-workspace-walkthrough.mp4" type="video/mp4" />
+              Your browser does not support embedded video.
+            </video>
+            <footer>See how a validated bracket moves from editable parameters to genuine CAD exports and an immutable revision.</footer>
+          </section>
+        </div>
+      )}
+    </>
   )
 }
 
