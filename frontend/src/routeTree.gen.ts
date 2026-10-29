@@ -18,6 +18,7 @@ import { Route as UsageRouteImport } from './routes/usage'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 import { Route as BuildProjectIdRouteImport } from './routes/build.$projectId'
 import { Route as ConsoleWorkspaceIdRouteImport } from './routes/console.$workspaceId'
+import { Route as ExploreSlugRouteImport } from './routes/explore.$slug'
 import { Route as IdeWorkspaceIdRouteImport } from './routes/ide.$workspaceId'
 import { Route as ProjectsIndexRouteImport } from './routes/projects.index'
 import { Route as ProjectsProjectIdIndexRouteImport } from './routes/projects.$projectId.index'
@@ -69,6 +70,11 @@ const ConsoleWorkspaceIdRoute = ConsoleWorkspaceIdRouteImport.update({
   path: '/console/$workspaceId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ExploreSlugRoute = ExploreSlugRouteImport.update({
+  id: '/explore/$slug',
+  path: '/explore/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IdeWorkspaceIdRoute = IdeWorkspaceIdRouteImport.update({
   id: '/ide/$workspaceId',
   path: '/ide/$workspaceId',
@@ -106,6 +112,7 @@ export interface FileRoutesByFullPath {
   '/auth/callback': typeof AuthCallbackRoute
   '/build/$projectId': typeof BuildProjectIdRoute
   '/console/$workspaceId': typeof ConsoleWorkspaceIdRoute
+  '/explore/$slug': typeof ExploreSlugRoute
   '/ide/$workspaceId': typeof IdeWorkspaceIdRoute
   '/projects/': typeof ProjectsIndexRoute
   '/projects/$projectId/growth': typeof ProjectsProjectIdGrowthRoute
@@ -122,6 +129,7 @@ export interface FileRoutesByTo {
   '/auth/callback': typeof AuthCallbackRoute
   '/build/$projectId': typeof BuildProjectIdRoute
   '/console/$workspaceId': typeof ConsoleWorkspaceIdRoute
+  '/explore/$slug': typeof ExploreSlugRoute
   '/ide/$workspaceId': typeof IdeWorkspaceIdRoute
   '/projects': typeof ProjectsIndexRoute
   '/projects/$projectId/growth': typeof ProjectsProjectIdGrowthRoute
@@ -139,6 +147,7 @@ export interface FileRoutesById {
   '/auth/callback': typeof AuthCallbackRoute
   '/build/$projectId': typeof BuildProjectIdRoute
   '/console/$workspaceId': typeof ConsoleWorkspaceIdRoute
+  '/explore/$slug': typeof ExploreSlugRoute
   '/ide/$workspaceId': typeof IdeWorkspaceIdRoute
   '/projects/': typeof ProjectsIndexRoute
   '/projects/$projectId/growth': typeof ProjectsProjectIdGrowthRoute
@@ -157,6 +166,7 @@ export interface FileRouteTypes {
     | '/auth/callback'
     | '/build/$projectId'
     | '/console/$workspaceId'
+    | '/explore/$slug'
     | '/ide/$workspaceId'
     | '/projects/'
     | '/projects/$projectId/growth'
@@ -173,6 +183,7 @@ export interface FileRouteTypes {
     | '/auth/callback'
     | '/build/$projectId'
     | '/console/$workspaceId'
+    | '/explore/$slug'
     | '/ide/$workspaceId'
     | '/projects'
     | '/projects/$projectId/growth'
@@ -189,6 +200,7 @@ export interface FileRouteTypes {
     | '/auth/callback'
     | '/build/$projectId'
     | '/console/$workspaceId'
+    | '/explore/$slug'
     | '/ide/$workspaceId'
     | '/projects/'
     | '/projects/$projectId/growth'
@@ -206,6 +218,7 @@ export interface RootRouteChildren {
   AuthCallbackRoute: typeof AuthCallbackRoute
   BuildProjectIdRoute: typeof BuildProjectIdRoute
   ConsoleWorkspaceIdRoute: typeof ConsoleWorkspaceIdRoute
+  ExploreSlugRoute: typeof ExploreSlugRoute
   IdeWorkspaceIdRoute: typeof IdeWorkspaceIdRoute
   ProjectsIndexRoute: typeof ProjectsIndexRoute
   ProjectsProjectIdGrowthRoute: typeof ProjectsProjectIdGrowthRoute
@@ -278,6 +291,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConsoleWorkspaceIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/explore/$slug': {
+      id: '/explore/$slug'
+      path: '/explore/$slug'
+      fullPath: '/explore/$slug'
+      preLoaderRoute: typeof ExploreSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/ide/$workspaceId': {
       id: '/ide/$workspaceId'
       path: '/ide/$workspaceId'
@@ -326,6 +346,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthCallbackRoute: AuthCallbackRoute,
   BuildProjectIdRoute: BuildProjectIdRoute,
   ConsoleWorkspaceIdRoute: ConsoleWorkspaceIdRoute,
+  ExploreSlugRoute: ExploreSlugRoute,
   IdeWorkspaceIdRoute: IdeWorkspaceIdRoute,
   ProjectsIndexRoute: ProjectsIndexRoute,
   ProjectsProjectIdGrowthRoute: ProjectsProjectIdGrowthRoute,

@@ -4,7 +4,7 @@ test('landing navigation keeps a clear mobile action without overflow', async ({
   await page.goto('/')
   await expect(page.getByRole('link', { name: 'Omniweb' })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Get started' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Product', exact: true })).toBeHidden()
+  await expect(page.getByRole('button', { name: 'Platform', exact: true })).toBeHidden()
 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
   expect(overflow).toBeLessThanOrEqual(0)

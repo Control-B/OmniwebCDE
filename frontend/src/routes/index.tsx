@@ -5,7 +5,6 @@ import {
   AppWindow,
   BarChart3,
   Blocks,
-  Bot,
   BriefcaseBusiness,
   Code2,
   Cloud,
@@ -27,6 +26,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { platform } from '../lib/api'
+import { DEVELOPER_ITEMS, PLATFORM_ITEMS, RESOURCE_ITEMS, SOLUTION_ITEMS } from '../lib/explore'
 import { createProject, deleteProject, loadProjects, type Project } from '../lib/projects'
 import { TEMPLATE_PROMPTS, createSpec, kindLabel, renderSite } from '../lib/site-generator'
 
@@ -50,40 +50,39 @@ const APP_SUGGESTIONS = [
   { label: 'Habit tracker (mobile)', prompt: 'A mobile habit tracker with daily check-ins, streaks, and reminders' },
 ]
 
-const PRODUCT_ITEMS = [
-  { icon: Sparkles, title: 'Unified Create', text: 'Plan, build, and grow from one prompt.', to: '/create' },
-  { icon: AppWindow, title: 'Application Builder', text: 'Generate and refine production-ready apps.', to: '/projects' },
-  { icon: BriefcaseBusiness, title: 'Business Planner', text: 'Turn evidence and assumptions into a roadmap.', to: '/create' },
-  { icon: Megaphone, title: 'Marketing Studio', text: 'Create campaigns, funnels, and experiments.', to: '/create' },
-  { icon: FileText, title: 'Content Studio', text: 'Produce governed text, image, and video assets.', to: '/create' },
-  { icon: Cloud, title: 'Cloud Workspaces', text: 'Build securely in isolated environments.', to: '/app' },
-  { icon: BarChart3, title: 'AI Usage & Budgets', text: 'Control models, routing, and spend.', to: '/usage' },
-  { icon: GitPullRequestArrow, title: 'Capability Evolution', text: 'Connect product releases and market evidence.', to: '/projects' },
-] as const
+const PRODUCT_NAV = PLATFORM_ITEMS.map((item, index) => ({
+  ...item,
+  icon: [Sparkles, AppWindow, BriefcaseBusiness, Megaphone, FileText, Cloud, BarChart3, GitPullRequestArrow][index],
+}))
+const SOLUTION_NAV = SOLUTION_ITEMS.map((item, index) => ({
+  ...item,
+  icon: [BriefcaseBusiness, Rocket, Megaphone, ContactRound, PanelsTopLeft, Palette, Blocks, Layers, MonitorSmartphone, Sparkles, Wand2, AppWindow][index],
+}))
+const DEVELOPER_NAV = DEVELOPER_ITEMS.map((item, index) => ({
+  ...item,
+  icon: [Code2, FileText, Blocks, Sparkles, GitPullRequestArrow, Cloud, AppWindow, MessageSquareText][index],
+}))
+const RESOURCE_NAV = RESOURCE_ITEMS.map((item, index) => ({
+  ...item,
+  icon: [PanelsTopLeft, FileText, ContactRound, GitPullRequestArrow, Layers, MessageSquareText, Rocket, Sparkles][index],
+}))
 
-const SOLUTION_ITEMS = [
-  { icon: Rocket, title: 'Founders', text: 'Go from market thesis to working product.', to: '/create' },
-  { icon: Megaphone, title: 'Marketing teams', text: 'Operate campaigns and content from one workspace.', to: '/create' },
-  { icon: PanelsTopLeft, title: 'Product teams', text: 'Build, test, and improve customer journeys.', to: '/projects' },
-  { icon: ContactRound, title: 'Agencies', text: 'Manage client apps, campaigns, and assets.', to: '/create' },
-] as const
-
-function LandingNav() {
+export function LandingNav() {
   return (
     <header className="lv-nav">
       <div className="lv-wrap lv-nav-inner">
         <Link to="/" className="lv-brand"><span className="lv-mark" />Omniweb</Link>
         <nav className="lv-links" aria-label="Primary">
           <div className="lv-menu">
-            <button type="button" className="lv-menu-trigger">Product</button>
+            <button type="button" className="lv-menu-trigger">Platform</button>
             <MegaMenu
               eyebrow="Omniweb platform"
-              items={PRODUCT_ITEMS}
+              items={PRODUCT_NAV}
               feature={{
                 kicker: 'One connected system',
                 title: 'Build the product and its growth engine.',
                 text: 'Software, strategy, campaigns, creative, and customer evidence stay in the same project context.',
-                to: '/create',
+                slug: 'unified-create',
                 label: 'Explore Unified Create',
               }}
             />
@@ -92,39 +91,46 @@ function LandingNav() {
             <button type="button" className="lv-menu-trigger">Solutions</button>
             <MegaMenu
               eyebrow="Built for your team"
-              items={SOLUTION_ITEMS}
+              items={SOLUTION_NAV}
               feature={{
                 kicker: 'Start with an outcome',
                 title: 'A complete campaign from one brief.',
                 text: 'Generate a funnel, landing page, content calendar, creative brief, and measurable objectives together.',
-                to: '/create',
-                label: 'Create a campaign',
+                slug: 'marketers',
+                label: 'Explore marketing solutions',
+              }}
+            />
+          </div>
+          <div className="lv-menu">
+            <button type="button" className="lv-menu-trigger">Developers</button>
+            <MegaMenu
+              eyebrow="Build on Omniweb"
+              items={DEVELOPER_NAV}
+              feature={{
+                kicker: 'Extensible by design',
+                title: 'Connect tools without bypassing governance.',
+                text: 'Use typed APIs, webhooks, MCP adapters, and tested capability patterns inside tenant and approval boundaries.',
+                slug: 'developer-platform',
+                label: 'Explore the developer platform',
               }}
             />
           </div>
           <div className="lv-menu">
             <button type="button" className="lv-menu-trigger">Resources</button>
-            <div className="lv-mega lv-mega-resources">
-              <div className="lv-mega-main">
-                <p className="lv-mega-eyebrow">Learn and explore</p>
-                <div className="lv-resource-grid">
-                  <a href="#templates"><strong>Templates</strong><span>Start with a proven foundation.</span></a>
-                  <a href="#how"><strong>How it works</strong><span>See an idea become a working experience.</span></a>
-                  <a href="#features"><strong>Platform features</strong><span>Explore the connected builder.</span></a>
-                  <Link to="/about"><strong>About Omniweb</strong><span>Our approach to adaptive execution.</span></Link>
-                </div>
-              </div>
-              <Link to="/usage" className="lv-mega-feature compact">
-                <span className="lv-feature-orbit"><Bot size={28} /></span>
-                <small>Execution intelligence</small>
-                <strong>Use the right model for every task.</strong>
-                <p>Review routing, provider health, budgets, and recorded usage.</p>
-                <span className="lv-feature-link">Open AI controls</span>
-              </Link>
-            </div>
+            <MegaMenu
+              eyebrow="Learn and explore"
+              items={RESOURCE_NAV}
+              feature={{
+                kicker: 'Practical guidance',
+                title: 'Build with transparent boundaries.',
+                text: 'Explore tested patterns, platform safeguards, customer workflows, and implementation guidance.',
+                slug: 'guides',
+                label: 'Browse Omniweb guides',
+              }}
+            />
           </div>
-          <a href="#templates">Templates</a>
           <Link to="/usage" hash="pricing">Pricing</Link>
+          <Link to="/explore/$slug" params={{ slug: 'trust-center' }}>Security</Link>
         </nav>
         <div className="lv-nav-actions">
           <Link to="/signin" className="lv-btn lv-btn-ghost">Sign in</Link>
@@ -142,8 +148,8 @@ function MegaMenu({
   feature,
 }: {
   eyebrow: string
-  items: ReadonlyArray<{ icon: typeof Sparkles; title: string; text: string; to: string }>
-  feature: { kicker: string; title: string; text: string; to: string; label: string }
+  items: ReadonlyArray<{ icon: typeof Sparkles; title: string; navText: string; slug: string }>
+  feature: { kicker: string; title: string; text: string; slug: string; label: string }
 }) {
   return (
     <div className="lv-mega">
@@ -151,14 +157,14 @@ function MegaMenu({
         <p className="lv-mega-eyebrow">{eyebrow}</p>
         <div className="lv-mega-grid">
           {items.map((item) => (
-            <Link key={item.title} to={item.to} className="lv-mega-item">
+            <Link key={item.title} to="/explore/$slug" params={{ slug: item.slug }} className="lv-mega-item">
               <span><item.icon size={18} /></span>
-              <div><strong>{item.title}</strong><small>{item.text}</small></div>
+              <div><strong>{item.title}</strong><small>{item.navText}</small></div>
             </Link>
           ))}
         </div>
       </div>
-      <Link to={feature.to} className="lv-mega-feature">
+      <Link to="/explore/$slug" params={{ slug: feature.slug }} className="lv-mega-feature">
         <span className="lv-feature-orbit"><Layers size={29} /></span>
         <small>{feature.kicker}</small>
         <strong>{feature.title}</strong>
