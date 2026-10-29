@@ -544,3 +544,117 @@ class EvolutionTransition(Base):
     evidence_ids: Mapped[list] = mapped_column(JSON, default=list)
     actor_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class EngineeringDesign(Base):
+    __tablename__ = "engineering_designs"
+    __table_args__ = (UniqueConstraint("organization_id", "idempotency_key"),)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(160))
+    idempotency_key: Mapped[str] = mapped_column(String(100))
+    component_kind: Mapped[str] = mapped_column(String(40), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="requirements_review", index=True)
+    current_revision: Mapped[int] = mapped_column(Integer, default=0)
+    created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class DesignRevision(Base):
+    __tablename__ = "engineering_design_revisions"
+    __table_args__ = (UniqueConstraint("design_id", "revision"),)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    design_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("engineering_designs.id", ondelete="CASCADE"), index=True
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    revision: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(32), default="queued", index=True)
+    approval_status: Mapped[str] = mapped_column(String(32), default="unreviewed")
+    change_note: Mapped[str] = mapped_column(String(500))
+    parametric_spec: Mapped[dict] = mapped_column(JSON)
+    operations: Mapped[list] = mapped_column(JSON, default=list)
+    geometry: Mapped[dict] = mapped_column(JSON, default=dict)
+    preview_mesh: Mapped[dict] = mapped_column(JSON, default=dict)
+    validation_level: Mapped[str] = mapped_column(String(32), default="none")
+    validation_checks: Mapped[list] = mapped_column(JSON, default=list)
+    safety_notice: Mapped[str] = mapped_column(Text, default="")
+    created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class DesignRequirement(Base):
+    __tablename__ = "engineering_design_requirements"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    revision_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("engineering_design_revisions.id", ondelete="CASCADE"), index=True
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    source_prompt: Mapped[str] = mapped_column(Text)
+    normalized: Mapped[dict] = mapped_column(JSON)
+    missing_critical: Mapped[list] = mapped_column(JSON, default=list)
+    assumptions: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class EngineeringJob(Base):
+    __tablename__ = "engineering_jobs"
+    __table_args__ = (UniqueConstraint("organization_id", "idempotency_key"),)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    design_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("engineering_designs.id", ondelete="CASCADE"), index=True
+    )
+    revision_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("engineering_design_revisions.id", ondelete="CASCADE"), index=True
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    job_type: Mapped[str] = mapped_column(String(32), default="generate")
+    status: Mapped[str] = mapped_column(String(32), default="queued", index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(100))
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str | None] = mapped_column(String(500))
+    duration_seconds: Mapped[float | None] = mapped_column(Float)
+    compute_cost_usd: Mapped[float] = mapped_column(Float, default=0)
+    created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class EngineeringArtifact(Base):
+    __tablename__ = "engineering_artifacts"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    revision_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("engineering_design_revisions.id", ondelete="CASCADE"), index=True
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(32))
+    format: Mapped[str] = mapped_column(String(16), index=True)
+    filename: Mapped[str] = mapped_column(String(240))
+    media_type: Mapped[str] = mapped_column(String(100))
+    storage_location: Mapped[str] = mapped_column(String(1_000))
+    sha256: Mapped[str] = mapped_column(String(64))
+    size: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class EngineeringFeedback(Base):
+    __tablename__ = "engineering_feedback"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    design_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("engineering_designs.id", ondelete="CASCADE"), index=True
+    )
+    revision_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("engineering_design_revisions.id", ondelete="CASCADE"), index=True
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    source: Mapped[str] = mapped_column(String(160))
+    evidence: Mapped[dict] = mapped_column(JSON)
+    recommendation: Mapped[dict] = mapped_column(JSON, default=dict)
+    authorized: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

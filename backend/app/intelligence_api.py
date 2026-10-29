@@ -33,7 +33,16 @@ router = APIRouter(prefix="/api/v1")
 
 class CreateInput(BaseModel):
     prompt: str = Field(min_length=3, max_length=20_000)
-    mode: Literal["AUTO", "BUILD", "BUSINESS", "MARKETING", "CONTENT", "IMAGE", "VIDEO"] = "AUTO"
+    mode: Literal[
+        "AUTO",
+        "BUILD",
+        "BUSINESS",
+        "MARKETING",
+        "CONTENT",
+        "IMAGE",
+        "VIDEO",
+        "ENGINEERING",
+    ] = "AUTO"
     project_id: uuid.UUID | None = None
     idempotency_key: str = Field(pattern=r"^[A-Za-z0-9_.:-]{8,100}$")
     context: dict = Field(default_factory=dict)

@@ -15,11 +15,17 @@ from sqlalchemy import select
 from ..builder import pipeline
 from ..config import get_settings
 from ..database import SessionLocal
+from ..engineering import service as engineering_service
+from ..engineering import worker as engineering_worker
 from ..intelligence_models import (
     AssetVersion,
     BusinessPlan,
     BusinessPlanSection,
     ContentAsset,
+    DesignRequirement,
+    DesignRevision,
+    EngineeringDesign,
+    EngineeringJob,
     Funnel,
     FunnelVersion,
     IntelligenceTask,
@@ -36,7 +42,16 @@ from ..services.media import MediaError, providers
 logger = logging.getLogger("omniweb.intelligence")
 _running: dict[uuid.UUID, asyncio.Task] = {}
 
-MODES = {"AUTO", "BUILD", "BUSINESS", "MARKETING", "CONTENT", "IMAGE", "VIDEO"}
+MODES = {
+    "AUTO",
+    "BUILD",
+    "BUSINESS",
+    "MARKETING",
+    "CONTENT",
+    "IMAGE",
+    "VIDEO",
+    "ENGINEERING",
+}
 PATTERNS = {
     "build": r"\b(build|website|web app|application|mobile app|software|feature|code)\b",
     "business": r"\b(business plan|business model|market research|pricing strategy|revenue model|go.to.market)\b",
@@ -44,6 +59,10 @@ PATTERNS = {
     "content": r"\b(blog|article|social (?:media )?posts?|email campaign|copy|product descriptions?|content calendar)\b",
     "image": r"\b(image|images|graphic|banner|illustration|logo|photo|creative)\b",
     "video": r"\b(video|storyboard|video campaign|video brief)\b",
+    "engineering": (
+        r"\b(cad|engineering drawings?|technical drawings?|parametric|step file|stl|"
+        r"bracket|mounting plate|spacer|bushing|shaft|mechanical enclosure)\b"
+    ),
 }
 MODE_KIND = {
     "BUILD": "build",
@@ -52,6 +71,7 @@ MODE_KIND = {
     "CONTENT": "content",
     "IMAGE": "image",
     "VIDEO": "video",
+    "ENGINEERING": "engineering",
 }
 
 
@@ -74,7 +94,7 @@ def dependency_graph(kinds: list[str]) -> list[dict]:
     """Stable task graph: strategy informs campaigns; campaigns inform creative assets."""
     selected = set(kinds)
     rows = []
-    for kind in ("business", "build", "marketing", "content", "image", "video"):
+    for kind in ("business", "build", "engineering", "marketing", "content", "image", "video"):
         if kind not in selected:
             continue
         dependencies = []
@@ -93,6 +113,7 @@ def dependency_graph(kinds: list[str]) -> list[dict]:
                     "content": "Create campaign content",
                     "image": "Prepare promotional image generation",
                     "video": "Prepare the video campaign",
+                    "engineering": "Generate and validate the engineering design",
                 }[kind],
                 "depends_on": dependencies,
             }
@@ -560,6 +581,103 @@ async def handle_video(workflow: IntelligenceWorkflow, task: IntelligenceTask) -
     return await handle_media(workflow, task, "video")
 
 
+async def handle_engineering(
+    workflow: IntelligenceWorkflow, task: IntelligenceTask
+) -> dict:
+    project = await ensure_project(workflow)
+    settings = get_settings()
+    extraction = await engineering_service.extract(settings, workflow.prompt)
+    requirements = extraction.get("requirements") or extraction["extracted"]
+    fallback = {
+        "review_notes": [
+            "Confirm all critical dimensions and material before manufacturing review.",
+            "Level 1 geometry validation does not establish structural safety.",
+        ]
+    }
+    review, usage = await ask_aaee(
+        workflow,
+        task,
+        "requirement_analysis",
+        "discovery",
+        (
+            "You are Omniweb's Engineering Supervisor. Review the supplied user request only "
+            "for documentation completeness. Return JSON review_notes. Do not invent dimensions, "
+            "tolerances, safety factors, loads, standards compliance, or structural conclusions."
+        ),
+        fallback,
+    )
+    principal = await principal_for(workflow)
+    async with SessionLocal() as db:
+        design = EngineeringDesign(
+            organization_id=workflow.organization_id,
+            project_id=project.id,
+            name=str(requirements.get("component_name") or "Engineering design")[:160],
+            component_kind=extraction["component_kind"],
+            idempotency_key=f"workflow:{workflow.id}",
+            status="requirements_review"
+            if extraction["missing_critical"]
+            else "generating",
+            current_revision=1,
+            created_by=workflow.requested_by,
+        )
+        db.add(design)
+        await db.flush()
+        revision = DesignRevision(
+            design_id=design.id,
+            organization_id=workflow.organization_id,
+            revision=1,
+            status="requirements_review"
+            if extraction["missing_critical"]
+            else "queued",
+            change_note="Generated from unified engineering request",
+            parametric_spec={
+                "schema": "omniweb.parametric-design.v1",
+                "requirements": requirements,
+                "supervisor_review": review,
+            },
+            safety_notice=(
+                "Geometry validation is not structural analysis, code compliance, engineering "
+                "certification, or approval for manufacturing."
+            ),
+            created_by=workflow.requested_by,
+        )
+        db.add(revision)
+        await db.flush()
+        db.add(
+            DesignRequirement(
+                revision_id=revision.id,
+                organization_id=workflow.organization_id,
+                source_prompt=workflow.prompt,
+                normalized=requirements,
+                missing_critical=extraction["missing_critical"],
+                assumptions=extraction["assumptions"],
+            )
+        )
+        job = None
+        if not extraction["missing_critical"]:
+            job = EngineeringJob(
+                design_id=design.id,
+                revision_id=revision.id,
+                organization_id=workflow.organization_id,
+                idempotency_key=f"workflow:{workflow.id}:engineering:r1",
+                created_by=principal.user_id,
+            )
+            db.add(job)
+            await db.flush()
+        await db.commit()
+    if job:
+        engineering_worker.launch(job.id)
+    return {
+        "design_id": str(design.id),
+        "revision_id": str(revision.id),
+        "job_id": str(job.id) if job else None,
+        "status": "queued" if job else "requirements_review",
+        "missing_critical": extraction["missing_critical"],
+        "questions": extraction["questions"],
+        **usage,
+    }
+
+
 HANDLERS = {
     "business": handle_business,
     "build": handle_build,
@@ -567,6 +685,7 @@ HANDLERS = {
     "content": handle_content,
     "image": handle_image,
     "video": handle_video,
+    "engineering": handle_engineering,
 }
 
 

@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     aaee_url: str = "http://127.0.0.1:8030"
     aaee_secret: str = Field(default="", repr=False)
     aaee_enabled: bool = True
+    engineering_service_url: str = "http://127.0.0.1:8040"
+    engineering_job_timeout_seconds: int = 120
+    engineering_max_concurrent_jobs: int = 2
+    engineering_max_artifact_bytes: int = 50_000_000
     # User IDs or emails allowed to manage platform-wide routing policy and pricing.
     platform_admins: str = ""
     # Media generation is disabled unless a server-side key, an allow-listed model, and

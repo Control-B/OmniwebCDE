@@ -17,7 +17,20 @@ class AssetStore:
     def put(self, tenant_id, data: bytes, extension: str = "bin") -> tuple[str, str]:
         digest = hashlib.sha256(data).hexdigest()
         extension = extension.lower().removeprefix(".")
-        if extension not in {"bin", "png", "jpg", "jpeg", "webp", "mp4"}:
+        if extension not in {
+            "bin",
+            "png",
+            "jpg",
+            "jpeg",
+            "webp",
+            "mp4",
+            "step",
+            "stp",
+            "stl",
+            "pdf",
+            "dxf",
+            "json",
+        }:
             extension = "bin"
         target = self.root / str(tenant_id) / digest[:2] / f"{digest}.{extension}"
         target.parent.mkdir(parents=True, exist_ok=True)

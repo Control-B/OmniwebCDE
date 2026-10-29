@@ -17,6 +17,8 @@ from .builder_api import router as builder_router
 from .capability_evolution import router as evolution_router
 from .config import get_settings
 from .database import SessionLocal, engine
+from .engineering import worker as engineering_worker
+from .engineering_api import router as engineering_router
 from .intelligence import orchestrator
 from .intelligence_api import router as intelligence_router
 from .marketing_api import router as marketing_router
@@ -79,7 +81,9 @@ async def lifespan(_: FastAPI):
                 await db.commit()
     await pipeline.resume_all(settings)
     await orchestrator.resume_all()
+    await engineering_worker.resume_all()
     yield
+    await engineering_worker.stop_all()
     await orchestrator.stop_all()
     await preview.stop_all()
     await engine.dispose()
@@ -103,6 +107,7 @@ app.include_router(ai_router)
 app.include_router(intelligence_router)
 app.include_router(marketing_router)
 app.include_router(evolution_router)
+app.include_router(engineering_router)
 app.include_router(router)
 app.include_router(projects_router)
 app.include_router(builder_router)
