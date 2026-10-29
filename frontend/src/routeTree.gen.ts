@@ -22,6 +22,7 @@ import { Route as ExploreSlugRouteImport } from './routes/explore.$slug'
 import { Route as IdeWorkspaceIdRouteImport } from './routes/ide.$workspaceId'
 import { Route as ProjectsIndexRouteImport } from './routes/projects.index'
 import { Route as ProjectsProjectIdIndexRouteImport } from './routes/projects.$projectId.index'
+import { Route as ProjectsProjectIdEngineeringRouteImport } from './routes/projects.$projectId.engineering'
 import { Route as ProjectsProjectIdGrowthRouteImport } from './routes/projects.$projectId.growth'
 import { Route as ProjectsProjectIdSettingsRouteImport } from './routes/projects.$projectId.settings'
 
@@ -90,6 +91,12 @@ const ProjectsProjectIdIndexRoute = ProjectsProjectIdIndexRouteImport.update({
   path: '/projects/$projectId/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProjectsProjectIdEngineeringRoute =
+  ProjectsProjectIdEngineeringRouteImport.update({
+    id: '/projects/$projectId/engineering',
+    path: '/projects/$projectId/engineering',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ProjectsProjectIdGrowthRoute = ProjectsProjectIdGrowthRouteImport.update({
   id: '/projects/$projectId/growth',
   path: '/projects/$projectId/growth',
@@ -115,6 +122,7 @@ export interface FileRoutesByFullPath {
   '/explore/$slug': typeof ExploreSlugRoute
   '/ide/$workspaceId': typeof IdeWorkspaceIdRoute
   '/projects/': typeof ProjectsIndexRoute
+  '/projects/$projectId/engineering': typeof ProjectsProjectIdEngineeringRoute
   '/projects/$projectId/growth': typeof ProjectsProjectIdGrowthRoute
   '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
   '/projects/$projectId/': typeof ProjectsProjectIdIndexRoute
@@ -132,6 +140,7 @@ export interface FileRoutesByTo {
   '/explore/$slug': typeof ExploreSlugRoute
   '/ide/$workspaceId': typeof IdeWorkspaceIdRoute
   '/projects': typeof ProjectsIndexRoute
+  '/projects/$projectId/engineering': typeof ProjectsProjectIdEngineeringRoute
   '/projects/$projectId/growth': typeof ProjectsProjectIdGrowthRoute
   '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
   '/projects/$projectId': typeof ProjectsProjectIdIndexRoute
@@ -150,6 +159,7 @@ export interface FileRoutesById {
   '/explore/$slug': typeof ExploreSlugRoute
   '/ide/$workspaceId': typeof IdeWorkspaceIdRoute
   '/projects/': typeof ProjectsIndexRoute
+  '/projects/$projectId/engineering': typeof ProjectsProjectIdEngineeringRoute
   '/projects/$projectId/growth': typeof ProjectsProjectIdGrowthRoute
   '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
   '/projects/$projectId/': typeof ProjectsProjectIdIndexRoute
@@ -169,6 +179,7 @@ export interface FileRouteTypes {
     | '/explore/$slug'
     | '/ide/$workspaceId'
     | '/projects/'
+    | '/projects/$projectId/engineering'
     | '/projects/$projectId/growth'
     | '/projects/$projectId/settings'
     | '/projects/$projectId/'
@@ -186,6 +197,7 @@ export interface FileRouteTypes {
     | '/explore/$slug'
     | '/ide/$workspaceId'
     | '/projects'
+    | '/projects/$projectId/engineering'
     | '/projects/$projectId/growth'
     | '/projects/$projectId/settings'
     | '/projects/$projectId'
@@ -203,6 +215,7 @@ export interface FileRouteTypes {
     | '/explore/$slug'
     | '/ide/$workspaceId'
     | '/projects/'
+    | '/projects/$projectId/engineering'
     | '/projects/$projectId/growth'
     | '/projects/$projectId/settings'
     | '/projects/$projectId/'
@@ -221,6 +234,7 @@ export interface RootRouteChildren {
   ExploreSlugRoute: typeof ExploreSlugRoute
   IdeWorkspaceIdRoute: typeof IdeWorkspaceIdRoute
   ProjectsIndexRoute: typeof ProjectsIndexRoute
+  ProjectsProjectIdEngineeringRoute: typeof ProjectsProjectIdEngineeringRoute
   ProjectsProjectIdGrowthRoute: typeof ProjectsProjectIdGrowthRoute
   ProjectsProjectIdSettingsRoute: typeof ProjectsProjectIdSettingsRoute
   ProjectsProjectIdIndexRoute: typeof ProjectsProjectIdIndexRoute
@@ -319,6 +333,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsProjectIdIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/projects/$projectId/engineering': {
+      id: '/projects/$projectId/engineering'
+      path: '/projects/$projectId/engineering'
+      fullPath: '/projects/$projectId/engineering'
+      preLoaderRoute: typeof ProjectsProjectIdEngineeringRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/projects/$projectId/growth': {
       id: '/projects/$projectId/growth'
       path: '/projects/$projectId/growth'
@@ -349,6 +370,7 @@ const rootRouteChildren: RootRouteChildren = {
   ExploreSlugRoute: ExploreSlugRoute,
   IdeWorkspaceIdRoute: IdeWorkspaceIdRoute,
   ProjectsIndexRoute: ProjectsIndexRoute,
+  ProjectsProjectIdEngineeringRoute: ProjectsProjectIdEngineeringRoute,
   ProjectsProjectIdGrowthRoute: ProjectsProjectIdGrowthRoute,
   ProjectsProjectIdSettingsRoute: ProjectsProjectIdSettingsRoute,
   ProjectsProjectIdIndexRoute: ProjectsProjectIdIndexRoute,

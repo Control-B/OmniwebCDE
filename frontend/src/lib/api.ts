@@ -214,7 +214,7 @@ export interface Member {
   role: string
 }
 
-export type IntelligenceMode = 'AUTO' | 'BUILD' | 'BUSINESS' | 'MARKETING' | 'CONTENT' | 'IMAGE' | 'VIDEO'
+export type IntelligenceMode = 'AUTO' | 'BUILD' | 'BUSINESS' | 'MARKETING' | 'CONTENT' | 'IMAGE' | 'VIDEO' | 'ENGINEERING'
 
 export interface IntelligenceTask {
   id: string
@@ -312,6 +312,72 @@ export interface EvolutionCase {
   updated_at: string
 }
 
+export interface EngineeringRequirements {
+  component_name: string
+  component_kind: 'plate' | 'l_bracket' | 'spacer' | 'enclosure'
+  units: 'mm'
+  material: string
+  manufacturing_process: string | null
+  parameters: Record<string, number>
+  hole_count: number
+  hole_diameter_mm: number | null
+  tolerances: Record<string, number>
+  requested_outputs: Array<'step' | 'stl' | 'pdf' | 'dxf' | 'source'>
+  standards: string[]
+  assumptions: string[]
+}
+
+export interface EngineeringArtifact {
+  id: string
+  kind: string
+  format: 'step' | 'stl' | 'pdf' | 'dxf' | 'json'
+  filename: string
+  media_type: string
+  sha256: string
+  size: number
+}
+
+export interface EngineeringRevision {
+  id: string
+  revision: number
+  status: string
+  approval_status: string
+  change_note: string
+  requirements: EngineeringRequirements
+  missing_critical: string[]
+  assumptions: string[]
+  operations: Array<{ operation: string; parameters: Record<string, unknown> }>
+  geometry: Record<string, number | string | Array<number>>
+  preview: { vertices?: number[][]; triangles?: number[][] }
+  validation_level: string
+  validation_checks: Array<{ key: string; status: string; message: string; measured?: unknown }>
+  safety_notice: string
+  job: { id: string; status: string; attempts: number; error: string | null; duration_seconds: number | null } | null
+  artifacts: EngineeringArtifact[]
+  created_at: string
+}
+
+export interface EngineeringDesign {
+  id: string
+  project_id: string
+  name: string
+  component_kind: string
+  status: string
+  current_revision: number
+  created_at: string
+  updated_at: string
+  revisions?: EngineeringRevision[]
+}
+
+export async function engineeringArtifact(artifactId: string): Promise<Blob> {
+  const token = await accessToken()
+  const response = await fetch(`${API_URL}/api/v1/engineering/artifacts/${artifactId}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!response.ok) throw new ApiError('Engineering artifact download failed', response.status)
+  return response.blob()
+}
+
 const json = (method: string, body: unknown): RequestInit => ({ method, body: JSON.stringify(body) })
 
 export const platform = {
@@ -368,6 +434,26 @@ export const platform = {
   contacts: (projectId: string) => request<CrmContact[]>(`/crm/contacts?project_id=${projectId}`),
   analytics: (projectId: string) => request<{ events: Record<string, number>; visitors: number; leads: number; funnel_conversion_rate: number | null; note: string }>(`/marketing/analytics?project_id=${projectId}`),
   evolutionCases: (projectId: string) => request<EvolutionCase[]>(`/evolution/cases?project_id=${projectId}`),
+  engineeringDesigns: (projectId: string) =>
+    request<EngineeringDesign[]>(`/engineering/designs?project_id=${projectId}`),
+  engineeringDesign: (designId: string) =>
+    request<EngineeringDesign>(`/engineering/designs/${designId}`),
+  createEngineeringDesign: (input: { project_id: string; prompt: string; idempotency_key: string }) =>
+    request<EngineeringDesign>('/engineering/designs', json('POST', input)),
+  reviseEngineeringDesign: (
+    designId: string,
+    input: {
+      requirements: EngineeringRequirements
+      change_note: string
+      source_prompt: string
+      idempotency_key: string
+    },
+  ) => request<EngineeringRevision>(`/engineering/designs/${designId}/revisions`, json('POST', input)),
+  requestEngineeringApproval: (designId: string) =>
+    request<{ approval_id: string; status: string }>(
+      `/engineering/designs/${designId}/approval-request`,
+      { method: 'POST' },
+    ),
 }
 
 export const api = {

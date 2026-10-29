@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Link, createFileRoute } from '@tanstack/react-router'
 import {
-  ArrowRight, BriefcaseBusiness, Check, Circle, Code2, Image, Megaphone,
+  ArrowRight, BriefcaseBusiness, Check, Circle, Code2, DraftingCompass, Image, Megaphone,
   PenLine, Play, Sparkles, Video,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -27,6 +27,7 @@ const modes: Array<{ mode: IntelligenceMode; label: string; icon: typeof Sparkle
   { mode: 'CONTENT', label: 'Content', icon: PenLine },
   { mode: 'IMAGE', label: 'Image', icon: Image },
   { mode: 'VIDEO', label: 'Video', icon: Video },
+  { mode: 'ENGINEERING', label: 'Engineering', icon: DraftingCompass },
 ]
 
 const starters = [
@@ -36,6 +37,7 @@ const starters = [
   { mode: 'CONTENT' as const, label: 'Create content', icon: PenLine, prompt: 'Create a month of on-brand blog, email, social, landing-page, and advertising content. Mark unsupported factual claims for review.' },
   { mode: 'IMAGE' as const, label: 'Generate images', icon: Image, prompt: 'Prepare promotional image concepts and generation jobs for web, email, and social media, with variants and usage metadata.' },
   { mode: 'VIDEO' as const, label: 'Create a video brief', icon: Video, prompt: 'Create a campaign video brief, storyboard, shot list, aspect ratios, and an asynchronous generation job where a provider is available.' },
+  { mode: 'ENGINEERING' as const, label: 'Design a component', icon: DraftingCompass, prompt: 'Design an L-shaped steel mounting bracket, 200 mm long, 80 mm wide, 6 mm thick, with four 10 mm mounting holes. Generate a 3D model, a dimensioned drawing, and manufacturing notes.' },
 ]
 
 function UnifiedCreate() {

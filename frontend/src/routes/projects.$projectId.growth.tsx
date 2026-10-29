@@ -1,7 +1,7 @@
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { Link, createFileRoute } from '@tanstack/react-router'
 import {
-  Activity, ArrowLeft, BookOpen, Bot, BriefcaseBusiness, Contact, FileText,
+  Activity, ArrowLeft, BookOpen, Bot, BriefcaseBusiness, Contact, DraftingCompass, FileText,
   GitPullRequestArrow, Layers3, Megaphone, PanelTop, Sparkles, Workflow,
 } from 'lucide-react'
 import { useState } from 'react'
@@ -83,6 +83,7 @@ function GrowthWorkspace() {
       <div className="growth-layout">
         <nav className="growth-sidebar" aria-label="Project workspace">
           {tabs.map(([id, label, Icon]) => <button key={id} type="button" aria-current={tab === id ? 'page' : undefined} onClick={() => setTab(id)}><Icon size={16} /><span>{label}</span>{countFor(id, { workflows, plans, campaigns, funnels, assets, contacts, cases })}</button>)}
+          <Link to="/projects/$projectId/engineering" params={{ projectId }}><DraftingCompass size={16} /><span>Engineering Design</span></Link>
           <Link to="/usage"><Bot size={16} /><span>AI Usage & Budgets</span></Link>
         </nav>
         <section className="growth-content">
