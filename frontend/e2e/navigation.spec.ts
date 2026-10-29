@@ -26,8 +26,9 @@ test('landing navigation exposes arrow-free accessible mega menus', async ({ pag
   await expect(page.getByRole('link', { name: /MCP integrations/ })).toBeVisible()
 
   await resources.hover()
-  await expect(page.getByRole('link', { name: /^Templates/ })).toBeVisible()
-  await expect(page.getByRole('link', { name: /Trust & security/ })).toBeVisible()
+  const resourceMenu = resources.locator('..')
+  await expect(resourceMenu.getByRole('link', { name: /^Templates/ })).toBeVisible()
+  await expect(resourceMenu.getByRole('link', { name: /Trust & security/ })).toBeVisible()
 
   await page.getByRole('link', { name: 'Omniweb', exact: true }).focus()
   await page.keyboard.press('Tab')
