@@ -35,7 +35,9 @@ def required_parameters(kind: ComponentKind) -> set[str]:
     }[kind]
 
 
-def _hole_positions(length: float, width: float, count: int, diameter: float) -> list[tuple[float, float]]:
+def _hole_positions(
+    length: float, width: float, count: int, diameter: float
+) -> list[tuple[float, float]]:
     if count == 0:
         return []
     edge = max(diameter, 2.0)
@@ -232,7 +234,9 @@ def _mesh(shape: cq.Workplane, max_triangles: int) -> dict:
     if len(triangles) > max_triangles:
         raise ValueError("Preview mesh exceeds the configured triangle budget")
     return {
-        "vertices": [[round(vertex.x, 5), round(vertex.y, 5), round(vertex.z, 5)] for vertex in vertices],
+        "vertices": [
+            [round(vertex.x, 5), round(vertex.y, 5), round(vertex.z, 5)] for vertex in vertices
+        ],
         "triangles": [list(triangle) for triangle in triangles],
     }
 
@@ -341,7 +345,9 @@ def generate(request: GenerateRequest) -> GenerateResponse:
         ValidationCheck(
             key="finite_bounds",
             status="passed"
-            if all(math.isfinite(value) and value > 0 for value in (bbox.xlen, bbox.ylen, bbox.zlen))
+            if all(
+                math.isfinite(value) and value > 0 for value in (bbox.xlen, bbox.ylen, bbox.zlen)
+            )
             else "failed",
             message="Bounding dimensions are finite and positive.",
             measured=f"{bbox.xlen:.3f} × {bbox.ylen:.3f} × {bbox.zlen:.3f} mm",
@@ -349,7 +355,10 @@ def generate(request: GenerateRequest) -> GenerateResponse:
         ValidationCheck(
             key="structural_safety",
             status="not_evaluated",
-            message="Structural capacity and safety require an approved analysis and professional review.",
+            message=(
+                "Structural capacity and safety require an approved analysis "
+                "and professional review."
+            ),
         ),
     ]
     valid = all(check.status != "failed" for check in checks)
@@ -364,7 +373,13 @@ def generate(request: GenerateRequest) -> GenerateResponse:
         indent=2,
     ).encode()
     artifacts.append(
-        _artifact("source", "json", f"{request.design_id}-r{request.revision}.json", "application/json", source)
+        _artifact(
+            "source",
+            "json",
+            f"{request.design_id}-r{request.revision}.json",
+            "application/json",
+            source,
+        )
     )
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)

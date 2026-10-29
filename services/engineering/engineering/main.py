@@ -57,7 +57,9 @@ async def generate_design(request: GenerateRequest) -> GenerateResponse:
         return result
     except TimeoutError as exc:
         GENERATIONS.labels(component, "timeout").inc()
-        raise HTTPException(status_code=504, detail="CAD generation exceeded its time limit") from exc
+        raise HTTPException(
+            status_code=504, detail="CAD generation exceeded its time limit"
+        ) from exc
     except ValueError as exc:
         GENERATIONS.labels(component, "invalid").inc()
         raise HTTPException(status_code=422, detail=str(exc)) from exc

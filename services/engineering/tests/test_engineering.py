@@ -112,7 +112,10 @@ def test_generates_valid_geometry_drawings_and_real_exports(kind):
     assert result.geometry["valid"]
     assert result.geometry["volume_mm3"] > 0
     assert result.preview["vertices"] and result.preview["triangles"]
-    assert next(check for check in result.checks if check.key == "structural_safety").status == "not_evaluated"
+    assert (
+        next(check for check in result.checks if check.key == "structural_safety").status
+        == "not_evaluated"
+    )
     artifacts = {artifact.format: artifact for artifact in result.artifacts}
     assert {"step", "stl", "pdf", "json"} <= artifacts.keys()
     assert base64.b64decode(artifacts["pdf"].data_base64).startswith(b"%PDF")

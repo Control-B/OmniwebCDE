@@ -14,7 +14,15 @@ NUMBER_WORDS = {
     "six": 6,
     "eight": 8,
 }
-UNIT_FACTORS = {"mm": 1.0, "millimeter": 1.0, "millimeters": 1.0, "cm": 10.0, "in": 25.4, "inch": 25.4, "inches": 25.4}
+UNIT_FACTORS = {
+    "mm": 1.0,
+    "millimeter": 1.0,
+    "millimeters": 1.0,
+    "cm": 10.0,
+    "in": 25.4,
+    "inch": 25.4,
+    "inches": 25.4,
+}
 
 
 class ExtractionResult(BaseModel):
@@ -42,9 +50,9 @@ def _dimension(prompt: str, labels: list[str]) -> float | None:
 
 def _component_kind(prompt: str) -> ComponentKind:
     low = prompt.lower()
-    if (
-        re.search(r"\bl[- ]?shaped?\b", low) and "bracket" in low
-    ) or re.search(r"\bangle\s+(?:mounting\s+)?bracket\b", low):
+    if (re.search(r"\bl[- ]?shaped?\b", low) and "bracket" in low) or re.search(
+        r"\bangle\s+(?:mounting\s+)?bracket\b", low
+    ):
         return ComponentKind.L_BRACKET
     if re.search(r"\b(spacer|bushing|sleeve)\b", low):
         return ComponentKind.SPACER
