@@ -47,7 +47,15 @@ class GenerateRequest(BaseModel):
 
 
 class ArtifactPayload(BaseModel):
-    kind: Literal["cad_model", "mesh", "drawing", "dxf", "source"]
+    kind: Literal[
+        "cad_model",
+        "mesh",
+        "drawing",
+        "dxf",
+        "source",
+        "assembly_model",
+        "bill_of_materials",
+    ]
     format: Literal["step", "stl", "pdf", "dxf", "json"]
     filename: str
     media_type: str
@@ -75,4 +83,104 @@ class GenerateResponse(BaseModel):
     safety_notice: str = (
         "Geometry validation is not structural analysis, code compliance, engineering "
         "certification, or approval for manufacturing."
+    )
+
+
+class AssemblyMember(BaseModel):
+    member_id: str = Field(pattern=r"^[0-9a-f-]{36}$")
+    name: str = Field(min_length=2, max_length=160)
+    requirements: DesignRequirements
+    quantity: int = Field(default=1, ge=1, le=20)
+    translation_mm: list[float] = Field(
+        default_factory=lambda: [0, 0, 0], min_length=3, max_length=3
+    )
+    rotation_deg: list[float] = Field(
+        default_factory=lambda: [0, 0, 0], min_length=3, max_length=3
+    )
+    instance_spacing_mm: list[float] = Field(
+        default_factory=lambda: [0, 0, 0], min_length=3, max_length=3
+    )
+
+
+class AssemblyGenerateRequest(BaseModel):
+    assembly_id: str = Field(pattern=r"^[0-9a-f-]{36}$")
+    revision: int = Field(ge=1, le=10_000)
+    name: str = Field(min_length=2, max_length=160)
+    members: list[AssemblyMember] = Field(min_length=2, max_length=50)
+    max_triangles: int = Field(default=60_000, ge=1_000, le=150_000)
+
+    @model_validator(mode="after")
+    def assembly_size_is_bounded(self):
+        if sum(member.quantity for member in self.members) > 50:
+            raise ValueError("An assembly is limited to 50 placed component instances")
+        return self
+
+
+class AssemblyGenerateResponse(BaseModel):
+    status: Literal["validated", "invalid"]
+    validation_level: Literal["assembly_geometry"] = "assembly_geometry"
+    geometry: dict
+    preview: dict
+    checks: list[ValidationCheck]
+    bill_of_materials: list[dict]
+    artifacts: list[ArtifactPayload]
+    safety_notice: str = (
+        "Assembly geometry validation checks placement, solids, and exports only. It does "
+        "not verify joints, fasteners, fit tolerances, loads, safety, or manufacturability."
+    )
+
+
+class ManufacturingEstimateRequest(BaseModel):
+    requirements: DesignRequirements
+    geometry: dict
+    process: Literal["sheet_metal", "cnc_milling", "laser_cut", "fdm_print"]
+    quantity: int = Field(default=1, ge=1, le=100_000)
+    material_cost_per_kg: float = Field(gt=0, le=100_000)
+    machine_rate_per_hour: float = Field(gt=0, le=100_000)
+    labor_rate_per_hour: float = Field(gt=0, le=100_000)
+    overhead_percent: float = Field(default=15, ge=0, le=200)
+
+
+class ManufacturingEstimateResponse(BaseModel):
+    status: Literal["budgetary_estimate"] = "budgetary_estimate"
+    process: str
+    quantity: int
+    currency: Literal["USD"] = "USD"
+    mass_kg_each: float
+    setup_minutes: float
+    run_minutes_each: float
+    breakdown: dict[str, float]
+    unit_cost: float
+    total_cost: float
+    assumptions: list[str]
+    confidence: Literal["low", "medium"]
+    notice: str = (
+        "This is an assumption-based budgetary estimate, not a supplier quote or a "
+        "manufacturing feasibility determination."
+    )
+
+
+class SimulationRequest(BaseModel):
+    requirements: DesignRequirements
+    geometry: dict
+    simulation_type: Literal["static_screening", "thermal_expansion", "modal_screening"]
+    load_n: float | None = Field(default=None, gt=0, le=100_000_000)
+    span_mm: float | None = Field(default=None, gt=0, le=100_000)
+    delta_temperature_c: float | None = Field(default=None, ge=-1_000, le=10_000)
+    boundary_condition: Literal["cantilever_fixed"] = "cantilever_fixed"
+
+
+class SimulationResponse(BaseModel):
+    status: Literal["screening_complete"] = "screening_complete"
+    simulation_type: str
+    method: str
+    inputs: dict
+    material_properties: dict
+    results: dict
+    checks: list[ValidationCheck]
+    assumptions: list[str]
+    verification_required: list[str]
+    safety_notice: str = (
+        "This deterministic screening calculation is not finite-element analysis, "
+        "structural certification, code compliance, or approval for manufacturing."
     )

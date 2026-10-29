@@ -9,10 +9,19 @@ import ezdxf
 import pytest
 from fastapi.testclient import TestClient
 
+from engineering.analysis import estimate_manufacturing, run_simulation
+from engineering.assembly import generate_assembly
 from engineering.cad import generate
 from engineering.main import app
 from engineering.requirements import extract_requirements
-from engineering.schemas import DesignRequirements, GenerateRequest
+from engineering.schemas import (
+    AssemblyGenerateRequest,
+    AssemblyMember,
+    DesignRequirements,
+    GenerateRequest,
+    ManufacturingEstimateRequest,
+    SimulationRequest,
+)
 
 
 @pytest.mark.parametrize(
@@ -183,3 +192,91 @@ def test_service_rejects_invalid_geometry_without_executing_input():
     response = client.post("/v1/generate", json=request)
     assert response.status_code == 422
     assert "smaller" in response.json()["detail"]
+
+
+def test_generates_real_step_assembly_bom_and_interference_evidence():
+    request = AssemblyGenerateRequest(
+        assembly_id=str(uuid.uuid4()),
+        revision=1,
+        name="Bracket mounting assembly",
+        members=[
+            AssemblyMember(
+                member_id=str(uuid.uuid4()),
+                name="Bracket",
+                requirements=_requirements("l_bracket"),
+            ),
+            AssemblyMember(
+                member_id=str(uuid.uuid4()),
+                name="Spacer",
+                requirements=_requirements("spacer"),
+                quantity=2,
+                translation_mm=[-50, 0, 6],
+                instance_spacing_mm=[100, 0, 0],
+            ),
+        ],
+    )
+    result = generate_assembly(request)
+    assert result.status == "validated"
+    assert result.geometry["member_instances"] == 3
+    assert len(result.bill_of_materials) == 2
+    assert result.preview["triangles"]
+    artifacts = {(item.kind, item.format): item for item in result.artifacts}
+    step = base64.b64decode(artifacts[("assembly_model", "step")].data_base64)
+    assert step.startswith(b"ISO-10303")
+    bom = json.loads(
+        base64.b64decode(artifacts[("bill_of_materials", "json")].data_base64)
+    )
+    assert bom["schema"] == "omniweb.bill-of-materials.v1"
+    assert len(bom["items"]) == 2
+
+
+def test_manufacturing_estimate_exposes_rates_assumptions_and_budgetary_notice():
+    result = estimate_manufacturing(
+        ManufacturingEstimateRequest(
+            requirements=_requirements("l_bracket"),
+            geometry={"volume_mm3": 182_900},
+            process="sheet_metal",
+            quantity=25,
+            material_cost_per_kg=2.4,
+            machine_rate_per_hour=95,
+            labor_rate_per_hour=65,
+            overhead_percent=18,
+        )
+    )
+    assert result.status == "budgetary_estimate"
+    assert result.total_cost > result.unit_cost > 0
+    assert result.breakdown["material"] > 0
+    assert result.confidence == "medium"
+    assert "not a supplier quote" in result.notice
+
+
+@pytest.mark.parametrize(
+    ("simulation_type", "extra", "result_key"),
+    [
+        ("static_screening", {"load_n": 250}, "tip_deflection_mm"),
+        (
+            "thermal_expansion",
+            {"delta_temperature_c": 60},
+            "free_length_change_mm",
+        ),
+        ("modal_screening", {}, "first_natural_frequency_hz"),
+    ],
+)
+def test_deterministic_screening_simulations_are_explicitly_not_fea(
+    simulation_type, extra, result_key
+):
+    result = run_simulation(
+        SimulationRequest(
+            requirements=_requirements("l_bracket"),
+            geometry={"volume_mm3": 182_900},
+            simulation_type=simulation_type,
+            **extra,
+        )
+    )
+    assert result.status == "screening_complete"
+    assert result.results[result_key] >= 0
+    assert "not finite-element analysis" in result.safety_notice
+    assert result.verification_required
+    assert next(check for check in result.checks if check.key == "structural_safety").status == (
+        "not_evaluated"
+    )
