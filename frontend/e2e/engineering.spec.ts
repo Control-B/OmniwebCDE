@@ -16,11 +16,11 @@ test('generates, previews, validates, and revises a real engineering design', as
 
   await expect(page.locator('.eng-state')).toContainText('validated', { timeout: 30_000 })
   await expect(page.getByLabel('Interactive 3D model').locator('canvas')).toBeVisible()
-  await expect(page.locator('.eng-check', { hasText: /brep validity/i })).toContainText('valid')
+  await expect(page.locator('.eng-check', { hasText: /brep valid/i })).toContainText('valid')
   await expect(page.locator('.eng-exports button', { hasText: 'STEP' })).toBeVisible()
   await expect(page.locator('.eng-safety')).toContainText('not structural analysis')
 
-  const thickness = page.locator('.eng-parameter-grid label', { hasText: 'thickness' }).locator('input')
+  const thickness = page.getByRole('spinbutton', { name: 'thickness mm', exact: true })
   await thickness.fill('8')
   await page.getByLabel('Revision note').fill('Increase plate thickness to 8 mm')
   await page.getByRole('button', { name: 'Create immutable revision' }).click()
