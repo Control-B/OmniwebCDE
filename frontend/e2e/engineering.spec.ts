@@ -1,4 +1,13 @@
-import { expect, test } from '@playwright/test'
+import { expect, type Page, test } from '@playwright/test'
+
+async function createValidatedDesign(page: Page, prompt: string) {
+  const designRows = page.locator('.eng-designs > button')
+  const initialCount = await designRows.count()
+  await page.getByLabel('Describe the mechanical component').fill(`${prompt} E2E ${Date.now()}`)
+  await page.getByRole('button', { name: 'Generate design' }).click()
+  await expect(designRows).toHaveCount(initialCount + 1, { timeout: 30_000 })
+  await expect(page.locator('.eng-state')).toContainText('validated', { timeout: 30_000 })
+}
 
 test('generates, previews, validates, and revises a real engineering design', async ({ page }) => {
   test.setTimeout(120_000)
@@ -42,6 +51,15 @@ test('builds assemblies, estimates manufacturing, and runs screening simulations
   const href = await page.locator('.st-project').first().getAttribute('href')
   const projectId = href!.split('/')[2].split('?')[0]
   await page.goto(`/projects/${projectId}/engineering`)
+
+  await createValidatedDesign(
+    page,
+    'Design a steel rectangular plate, 160 mm long, 90 mm wide, 6 mm thick, with four 8 mm mounting holes.',
+  )
+  await createValidatedDesign(
+    page,
+    'Design an aluminum cylindrical spacer, 30 mm outer diameter, 12 mm inner diameter, and 20 mm long.',
+  )
 
   await page.getByRole('button', { name: 'Assemblies', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'CAD assemblies' })).toBeVisible()
