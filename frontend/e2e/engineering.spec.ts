@@ -35,3 +35,33 @@ test('generates, previews, validates, and revises a real engineering design', as
   await expect(page.locator('.eng-state')).toContainText('validated', { timeout: 30_000 })
   await expect(page.locator('.eng-revisions > div')).toHaveCount(2)
 })
+
+test('builds assemblies, estimates manufacturing, and runs screening simulations', async ({ page }) => {
+  test.setTimeout(120_000)
+  await page.goto('/projects')
+  const href = await page.locator('.st-project').first().getAttribute('href')
+  const projectId = href!.split('/')[2].split('?')[0]
+  await page.goto(`/projects/${projectId}/engineering`)
+
+  await page.getByRole('button', { name: 'Assemblies', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'CAD assemblies' })).toBeVisible()
+  await page.getByRole('button', { name: 'Generate assembly' }).click()
+  await expect(page.locator('.eng-result-title')).toContainText('validated', { timeout: 30_000 })
+  await expect(page.locator('.eng-assembly-view canvas')).toBeVisible()
+  await expect(page.locator('.eng-bom > div')).toHaveCount(2)
+  await expect(page.locator('.eng-exports button', { hasText: 'STEP' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Manufacturing', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Manufacturing estimates' })).toBeVisible()
+  await page.getByRole('button', { name: 'Calculate estimate' }).click()
+  await expect(page.getByRole('heading', { name: 'Budgetary manufacturing estimate' })).toBeVisible()
+  await expect(page.locator('.eng-estimate-total')).toContainText('$')
+  await expect(page.locator('.eng-safety')).toContainText('not a supplier quote')
+
+  await page.getByRole('button', { name: 'Simulations', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Simulations' })).toBeVisible()
+  await page.getByRole('button', { name: 'Run screening' }).click()
+  await expect(page.getByRole('heading', { name: 'Screening results' })).toBeVisible()
+  await expect(page.locator('.eng-simulation-results article').first()).toBeVisible()
+  await expect(page.locator('.eng-safety')).toContainText('not finite-element analysis')
+})

@@ -369,12 +369,100 @@ export interface EngineeringDesign {
   revisions?: EngineeringRevision[]
 }
 
+export interface EngineeringAssemblyRevision {
+  id: string
+  revision: number
+  status: string
+  definition: {
+    name: string
+    members: Array<{
+      member_id: string
+      name: string
+      quantity: number
+      translation_mm: number[]
+      rotation_deg: number[]
+      instance_spacing_mm: number[]
+    }>
+  }
+  geometry: Record<string, any>
+  preview: { vertices?: number[][]; triangles?: number[][] }
+  validation_checks: Array<{ key: string; status: string; message: string; measured?: unknown }>
+  bill_of_materials: Array<{
+    member_id: string
+    part_number: string
+    name: string
+    component_kind: string
+    material: string
+    quantity: number
+    volume_mm3_each: number
+    mass_kg_each: number | null
+  }>
+  safety_notice: string
+  artifacts: EngineeringArtifact[]
+  created_at: string
+}
+
+export interface EngineeringAssembly {
+  id: string
+  project_id: string
+  name: string
+  status: string
+  current_revision: number
+  created_at: string
+  updated_at: string
+  revisions?: EngineeringAssemblyRevision[]
+}
+
+export interface ManufacturingEstimate {
+  id: string
+  revision_id: string
+  created_at: string
+  status: 'budgetary_estimate'
+  process: string
+  quantity: number
+  currency: 'USD'
+  mass_kg_each: number
+  setup_minutes: number
+  run_minutes_each: number
+  breakdown: Record<string, number>
+  unit_cost: number
+  total_cost: number
+  assumptions: string[]
+  confidence: 'low' | 'medium'
+  notice: string
+}
+
+export interface EngineeringSimulation {
+  id: string
+  revision_id: string
+  created_at: string
+  status: 'screening_complete'
+  simulation_type: string
+  method: string
+  inputs: Record<string, unknown>
+  material_properties: Record<string, number>
+  results: Record<string, number | null>
+  checks: Array<{ key: string; status: string; message: string }>
+  assumptions: string[]
+  verification_required: string[]
+  safety_notice: string
+}
+
 export async function engineeringArtifact(artifactId: string): Promise<Blob> {
   const token = await accessToken()
   const response = await fetch(`${API_URL}/api/v1/engineering/artifacts/${artifactId}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   })
   if (!response.ok) throw new ApiError('Engineering artifact download failed', response.status)
+  return response.blob()
+}
+
+export async function assemblyArtifact(artifactId: string): Promise<Blob> {
+  const token = await accessToken()
+  const response = await fetch(`${API_URL}/api/v1/engineering/assembly-artifacts/${artifactId}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!response.ok) throw new ApiError('Assembly artifact download failed', response.status)
   return response.blob()
 }
 
@@ -464,6 +552,57 @@ export const platform = {
       `/engineering/jobs/${jobId}/cancel`,
       { method: 'POST' },
     ),
+  engineeringAssemblies: (projectId: string) =>
+    request<EngineeringAssembly[]>(`/engineering/assemblies?project_id=${projectId}`),
+  engineeringAssembly: (assemblyId: string) =>
+    request<EngineeringAssembly>(`/engineering/assemblies/${assemblyId}`),
+  createEngineeringAssembly: (input: {
+    project_id: string
+    name: string
+    idempotency_key: string
+    members: Array<{
+      revision_id: string
+      quantity?: number
+      translation_mm?: number[]
+      rotation_deg?: number[]
+      instance_spacing_mm?: number[]
+    }>
+  }) => request<EngineeringAssembly>('/engineering/assemblies', json('POST', input)),
+  manufacturingEstimates: (designId: string) =>
+    request<ManufacturingEstimate[]>(
+      `/engineering/designs/${designId}/manufacturing-estimates`,
+    ),
+  createManufacturingEstimate: (
+    designId: string,
+    input: {
+      revision_id: string
+      process: 'sheet_metal' | 'cnc_milling' | 'laser_cut' | 'fdm_print'
+      quantity: number
+      material_cost_per_kg: number
+      machine_rate_per_hour: number
+      labor_rate_per_hour: number
+      overhead_percent: number
+    },
+  ) => request<ManufacturingEstimate>(
+    `/engineering/designs/${designId}/manufacturing-estimates`,
+    json('POST', input),
+  ),
+  engineeringSimulations: (designId: string) =>
+    request<EngineeringSimulation[]>(`/engineering/designs/${designId}/simulations`),
+  createEngineeringSimulation: (
+    designId: string,
+    input: {
+      revision_id: string
+      simulation_type: 'static_screening' | 'thermal_expansion' | 'modal_screening'
+      load_n?: number
+      span_mm?: number
+      delta_temperature_c?: number
+      boundary_condition: 'cantilever_fixed'
+    },
+  ) => request<EngineeringSimulation>(
+    `/engineering/designs/${designId}/simulations`,
+    json('POST', input),
+  ),
 }
 
 export const api = {

@@ -48,6 +48,21 @@ controls, drawing preview, immutable history, validation checks, exports, and a 
 request. Natural-language edits are represented as new revisions; approved revisions are
 never overwritten.
 
+The same workspace now includes three additional governed capabilities:
+
+- **Assemblies** place validated part revisions with explicit translations, rotations,
+  quantities, and instance spacing. CadQuery/OpenCascade exports a genuine multi-body
+  STEP and STL, plus a versioned assembly source, bill of materials, mass estimate,
+  combined preview, and volumetric interference screen.
+- **Manufacturing estimates** use validated volume, material density, process throughput,
+  setup time, quantity, and user-editable material/machine/labor rates. Every cost
+  component and assumption remains visible. Results are budgetary estimates, never
+  supplier quotes or feasibility determinations.
+- **Simulations** provide deterministic static cantilever, free thermal expansion, and
+  first-mode cantilever screening. Inputs, nominal material properties, method,
+  assumptions, and required professional verification are stored with each result.
+  These closed-form screens are deliberately not described as finite-element analysis.
+
 ## Contracts and traceability
 
 `EngineeringDesign` belongs to an existing organization and project. Every
@@ -64,6 +79,10 @@ The public API is under `/api/v1/engineering`:
 - `POST /jobs/{id}/retry`, `POST /jobs/{id}/cancel`
 - `POST /designs/{id}/approval-request`, `POST /approvals/{id}`
 - `POST /designs/{id}/feedback`
+- `POST /assemblies`, `GET /assemblies`, `GET /assemblies/{id}`
+- authenticated assembly STEP/STL/source/BOM artifact access
+- `POST` and `GET /designs/{id}/manufacturing-estimates`
+- `POST` and `GET /designs/{id}/simulations`
 - authenticated and ten-minute signed artifact access
 - tenant-scoped operational metrics
 
@@ -77,8 +96,9 @@ volume, finite bounds, dimensional input constraints, feature construction, expo
 integrity, and drawing provenance from the generated geometry.
 
 Level 2 calculations are not presented unless a reviewed deterministic method and all
-required assumptions are available. Level 3 structural, safety, regulatory, and
-code-compliance validation is not implemented.
+required assumptions are available. Static, thermal, and modal screens are Level 2
+comparative calculations with explicit idealizations; they do not establish safety.
+Level 3 structural, safety, regulatory, and code-compliance validation is not implemented.
 
 > Geometry validation is not structural analysis, code compliance, engineering
 > certification, or approval for manufacturing.
@@ -135,6 +155,7 @@ STEP round-trips through OpenCascade, STL/PDF/DXF export, immutable dimensional 
 approval boundaries, signed downloads, tenant isolation, authorized feedback, and failed
 job recovery.
 
-FreeCAD TechDraw, GD&T rule verification, assemblies/BOMs, finite-element analysis,
-manufacturing simulation, native Onshape synchronization, and automatic
-approved-for-manufacturing release are not implemented and must not be claimed.
+FreeCAD TechDraw, GD&T rule verification, constraint-solving mates, joint/fastener
+analysis, finite-element analysis, manufacturing feasibility simulation, supplier
+quoting, native Onshape synchronization, and automatic approved-for-manufacturing release
+are not implemented and must not be claimed.

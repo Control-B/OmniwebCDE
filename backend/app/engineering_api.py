@@ -1138,8 +1138,26 @@ async def engineering_metrics(
             EngineeringJob.status == "completed",
         )
     )
+    assemblies = await db.scalar(
+        select(func.count(EngineeringAssembly.id)).where(
+            EngineeringAssembly.organization_id == principal.organization_id
+        )
+    )
+    estimates = await db.scalar(
+        select(func.count(ManufacturingEstimate.id)).where(
+            ManufacturingEstimate.organization_id == principal.organization_id
+        )
+    )
+    simulations = await db.scalar(
+        select(func.count(EngineeringSimulation.id)).where(
+            EngineeringSimulation.organization_id == principal.organization_id
+        )
+    )
     return {
         "jobs": {key: value for key, value in rows},
+        "assemblies": assemblies or 0,
+        "manufacturing_estimates": estimates or 0,
+        "screening_simulations": simulations or 0,
         "average_duration_seconds": round(float(average), 6) if average is not None else None,
         "compute_cost_usd": 0,
         "note": "Level 1 geometry validation only; structural safety is not evaluated.",

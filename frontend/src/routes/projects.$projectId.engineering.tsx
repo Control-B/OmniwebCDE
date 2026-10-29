@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, createFileRoute } from '@tanstack/react-router'
 import {
-  AlertTriangle, ArrowLeft, Box, CheckCircle2, Download, DraftingCompass,
-  Eye, FileText, Grid3X3, History, LoaderCircle, Play, RefreshCcw, RotateCcw, Save,
-  ShieldCheck, XCircle,
+  AlertTriangle, ArrowLeft, Box, Boxes, Calculator, CheckCircle2, Download,
+  DraftingCompass, Eye, Factory, FileText, Gauge, Grid3X3, History, LoaderCircle,
+  Play, Plus, RefreshCcw, RotateCcw, Save, ShieldCheck, Trash2, XCircle,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
@@ -11,12 +11,16 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 
 import { AppNav, RequireAuth } from '../components/studio/AppNav'
 import {
+  assemblyArtifact,
   engineeringArtifact,
   platform,
   type EngineeringArtifact,
+  type EngineeringAssembly,
   type EngineeringDesign,
   type EngineeringRequirements,
   type EngineeringRevision,
+  type EngineeringSimulation,
+  type ManufacturingEstimate,
 } from '../lib/api'
 
 export const Route = createFileRoute('/projects/$projectId/engineering')({
@@ -36,6 +40,9 @@ function EngineeringWorkspace() {
   const cache = useQueryClient()
   const [prompt, setPrompt] = useState(example)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [workspaceMode, setWorkspaceMode] = useState<
+    'parts' | 'assemblies' | 'manufacturing' | 'simulations'
+  >('parts')
   const designs = useQuery({
     queryKey: ['engineering-designs', projectId],
     queryFn: () => platform.engineeringDesigns(projectId),
@@ -79,6 +86,20 @@ function EngineeringWorkspace() {
 
       <WalkthroughCard />
 
+      <nav className="eng-capability-nav" aria-label="Engineering capabilities">
+        {([
+          ['parts', 'Parts', Box],
+          ['assemblies', 'Assemblies', Boxes],
+          ['manufacturing', 'Manufacturing', Factory],
+          ['simulations', 'Simulations', Gauge],
+        ] as const).map(([id, label, Icon]) => (
+          <button key={id} type="button" aria-current={workspaceMode === id ? 'page' : undefined} onClick={() => setWorkspaceMode(id)}>
+            <Icon size={15} />{label}
+          </button>
+        ))}
+      </nav>
+
+      {workspaceMode === 'parts' && <>
       <section className="eng-prompt">
         <textarea aria-label="Describe the mechanical component" value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={3} />
         <button className="growth-primary" type="button" disabled={create.isPending || prompt.trim().length < 3} onClick={() => create.mutate()}>
@@ -107,6 +128,28 @@ function EngineeringWorkspace() {
           {design.data && current && <DesignEditor design={design.data} revision={current} />}
         </section>
       </div>
+      </>}
+      {workspaceMode === 'assemblies' && (
+        <AssembliesWorkspace projectId={projectId} designs={designs.data ?? []} />
+      )}
+      {workspaceMode === 'manufacturing' && (
+        <ManufacturingWorkspace
+          designs={designs.data ?? []}
+          selectedId={selectedId}
+          selectDesign={setSelectedId}
+          design={design.data}
+          revision={current}
+        />
+      )}
+      {workspaceMode === 'simulations' && (
+        <SimulationsWorkspace
+          designs={designs.data ?? []}
+          selectedId={selectedId}
+          selectDesign={setSelectedId}
+          design={design.data}
+          revision={current}
+        />
+      )}
     </main>
   )
 }
@@ -150,6 +193,285 @@ function WalkthroughCard() {
       )}
     </>
   )
+}
+
+type AssemblyMemberDraft = {
+  designId: string
+  quantity: number
+  x: number
+  y: number
+  z: number
+  spacingX: number
+}
+
+function AssembliesWorkspace({ projectId, designs }: { projectId: string; designs: EngineeringDesign[] }) {
+  const cache = useQueryClient()
+  const [name, setName] = useState('Bracket mounting assembly')
+  const [members, setMembers] = useState<AssemblyMemberDraft[]>([])
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  useEffect(() => {
+    if (!members.length && designs.length) {
+      setMembers([
+        { designId: designs[0].id, quantity: 1, x: 0, y: 0, z: 0, spacingX: 0 },
+        {
+          designId: designs[1]?.id ?? designs[0].id,
+          quantity: 1,
+          x: 0,
+          y: 100,
+          z: 20,
+          spacingX: 0,
+        },
+      ])
+    }
+  }, [designs, members.length])
+  const assemblies = useQuery({
+    queryKey: ['engineering-assemblies', projectId],
+    queryFn: () => platform.engineeringAssemblies(projectId),
+  })
+  useEffect(() => {
+    if (!selectedId && assemblies.data?.length) setSelectedId(assemblies.data[0].id)
+  }, [assemblies.data, selectedId])
+  const assembly = useQuery({
+    queryKey: ['engineering-assembly', selectedId],
+    queryFn: () => platform.engineeringAssembly(selectedId!),
+    enabled: Boolean(selectedId),
+  })
+  const create = useMutation({
+    mutationFn: async () => {
+      const detailed = await Promise.all(
+        members.map((member) => platform.engineeringDesign(member.designId)),
+      )
+      return platform.createEngineeringAssembly({
+        project_id: projectId,
+        name,
+        idempotency_key: `assembly-${crypto.randomUUID()}`,
+        members: members.map((member, index) => {
+          const revision = detailed[index].revisions?.find((item) => item.status === 'validated')
+          if (!revision) throw new Error(`${detailed[index].name} needs a validated revision`)
+          return {
+            revision_id: revision.id,
+            quantity: member.quantity,
+            translation_mm: [member.x, member.y, member.z],
+            rotation_deg: [0, 0, 0],
+            instance_spacing_mm: [member.spacingX, 0, 0],
+          }
+        }),
+      })
+    },
+    onSuccess: async (row) => {
+      setSelectedId(row.id)
+      await cache.invalidateQueries({ queryKey: ['engineering-assemblies', projectId] })
+    },
+  })
+  const updateMember = (index: number, patch: Partial<AssemblyMemberDraft>) => {
+    setMembers((current) => current.map((member, position) => position === index ? { ...member, ...patch } : member))
+  }
+  const current = assembly.data?.revisions?.[0]
+
+  return (
+    <section className="eng-expansion-shell">
+      <header className="eng-expansion-head">
+        <div><span>Multi-part engineering</span><h2>CAD assemblies</h2><p>Place validated parametric parts into a genuine multi-body STEP assembly with interference screening and a generated bill of materials.</p></div>
+        <span className="eng-boundary"><ShieldCheck size={14} /> Geometry-level assembly checks</span>
+      </header>
+      <div className="eng-expansion-grid">
+        <aside className="eng-config-panel">
+          <div className="eng-panel-title"><Plus size={15} /><strong>New assembly</strong><span>{members.length} members</span></div>
+          <label>Assembly name<input value={name} onChange={(event) => setName(event.target.value)} /></label>
+          <div className="eng-member-list">
+            {members.map((member, index) => (
+              <article key={`${index}-${member.designId}`}>
+                <header><strong>Member {index + 1}</strong>{members.length > 2 && <button type="button" aria-label={`Remove member ${index + 1}`} onClick={() => setMembers((current) => current.filter((_, position) => position !== index))}><Trash2 size={13} /></button>}</header>
+                <select aria-label={`Member ${index + 1} design`} value={member.designId} onChange={(event) => updateMember(index, { designId: event.target.value })}>
+                  {designs.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                </select>
+                <div className="eng-mini-fields">
+                  <label>Qty<input type="number" min="1" max="20" value={member.quantity} onChange={(event) => updateMember(index, { quantity: Number(event.target.value) })} /></label>
+                  <label>X<input type="number" value={member.x} onChange={(event) => updateMember(index, { x: Number(event.target.value) })} /></label>
+                  <label>Y<input type="number" value={member.y} onChange={(event) => updateMember(index, { y: Number(event.target.value) })} /></label>
+                  <label>Z<input type="number" value={member.z} onChange={(event) => updateMember(index, { z: Number(event.target.value) })} /></label>
+                  <label>Spacing X<input type="number" value={member.spacingX} onChange={(event) => updateMember(index, { spacingX: Number(event.target.value) })} /></label>
+                </div>
+              </article>
+            ))}
+          </div>
+          <button className="eng-add-member" type="button" disabled={!designs.length || members.length >= 10} onClick={() => setMembers((current) => [...current, { designId: designs[0].id, quantity: 1, x: 0, y: current.length * 100, z: 0, spacingX: 0 }])}><Plus size={13} /> Add member</button>
+          <button className="growth-primary eng-wide-action" type="button" disabled={create.isPending || members.length < 2 || name.trim().length < 2} onClick={() => create.mutate()}>
+            {create.isPending ? <LoaderCircle className="eng-spin" size={15} /> : <Boxes size={15} />} Generate assembly
+          </button>
+          {create.error && <p className="st-error">{create.error.message}</p>}
+          <div className="eng-existing-list">
+            <strong>Saved assemblies</strong>
+            {assemblies.data?.map((item) => <button type="button" key={item.id} className={item.id === selectedId ? 'active' : ''} onClick={() => setSelectedId(item.id)}><span>{item.name}</span><small>R{item.current_revision} · {item.status}</small></button>)}
+            {!assemblies.data?.length && <p>No assemblies yet.</p>}
+          </div>
+        </aside>
+        <div className="eng-expansion-results">
+          {!current && <div className="eng-empty expansion"><Boxes size={32} /><h2>Build the product, not just the part.</h2><p>Add at least two validated part revisions, set their placement, and generate an assembly.</p></div>}
+          {assembly.isLoading && <div className="eng-loading large"><span className="st-spinner" /> Loading assembly…</div>}
+          {current && <AssemblyResult assembly={assembly.data!} revision={current} />}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function AssemblyResult({ assembly, revision }: { assembly: EngineeringAssembly; revision: NonNullable<EngineeringAssembly['revisions']>[number] }) {
+  return (
+    <>
+      <div className="eng-result-title"><div><span>Assembly revision {revision.revision}</span><h3>{assembly.name}</h3></div><span className={`eng-state ${revision.status}`}><span />{revision.status}</span></div>
+      <div className="eng-assembly-view"><ModelViewer preview={revision.preview} grid wireframe={false} fitSignal={0} /></div>
+      <div className="eng-result-metrics">
+        <div><small>Instances</small><strong>{String(revision.geometry.member_instances ?? '—')}</strong></div>
+        <div><small>Unique parts</small><strong>{String(revision.geometry.unique_parts ?? '—')}</strong></div>
+        <div><small>Estimated mass</small><strong>{formatNumber(revision.geometry.estimated_mass_kg)} kg</strong></div>
+        <div><small>Interferences</small><strong>{Array.isArray(revision.geometry.interferences) ? revision.geometry.interferences.length : 0}</strong></div>
+      </div>
+      <div className="eng-assembly-lower">
+        <section className="eng-card"><div className="eng-panel-title"><Calculator size={15} /><strong>Bill of materials</strong><span>{revision.bill_of_materials.length} items</span></div><div className="eng-bom">{revision.bill_of_materials.map((item) => <div key={item.member_id}><span>{item.part_number}</span><div><strong>{item.name}</strong><small>{item.material} · {item.component_kind.replaceAll('_', ' ')}</small></div><b>×{item.quantity}</b></div>)}</div></section>
+        <section className="eng-card"><div className="eng-panel-title"><CheckCircle2 size={15} /><strong>Assembly checks</strong><span>geometry</span></div>{revision.validation_checks.map((check) => <div className="eng-check" key={check.key}><span className={check.status}>{check.status === 'passed' ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}</span><div><strong>{check.key.replaceAll('_', ' ')}</strong><p>{check.message}</p></div></div>)}</section>
+        <AssemblyArtifacts artifacts={revision.artifacts} />
+      </div>
+      <div className="eng-safety"><AlertTriangle size={17} /><div><strong>Assembly validation boundary</strong><p>{revision.safety_notice}</p></div></div>
+    </>
+  )
+}
+
+function AssemblyArtifacts({ artifacts }: { artifacts: EngineeringArtifact[] }) {
+  const download = async (artifact: EngineeringArtifact) => {
+    const blob = await assemblyArtifact(artifact.id)
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = artifact.filename
+    anchor.click()
+    URL.revokeObjectURL(url)
+  }
+  return <section className="eng-card"><div className="eng-panel-title"><Download size={15} /><strong>Assembly exports</strong><span>{artifacts.length}</span></div><div className="eng-exports">{artifacts.map((artifact) => <button type="button" key={artifact.id} onClick={() => void download(artifact)}><span>{artifact.format.toUpperCase()}</span><div><strong>{artifact.filename}</strong><small>{artifact.kind.replaceAll('_', ' ')} · {formatBytes(artifact.size)}</small></div><Download size={14} /></button>)}</div></section>
+}
+
+function DesignSelector({ designs, selectedId, selectDesign }: { designs: EngineeringDesign[]; selectedId: string | null; selectDesign: (id: string) => void }) {
+  return <label className="eng-design-selector">Part<select value={selectedId ?? ''} onChange={(event) => selectDesign(event.target.value)}>{designs.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+}
+
+function ManufacturingWorkspace({ designs, selectedId, selectDesign, design, revision }: {
+  designs: EngineeringDesign[]
+  selectedId: string | null
+  selectDesign: (id: string) => void
+  design?: EngineeringDesign
+  revision?: EngineeringRevision
+}) {
+  const cache = useQueryClient()
+  const [process, setProcess] = useState<'sheet_metal' | 'cnc_milling' | 'laser_cut' | 'fdm_print'>('sheet_metal')
+  const [quantity, setQuantity] = useState(25)
+  const [materialRate, setMaterialRate] = useState(2.4)
+  const [machineRate, setMachineRate] = useState(95)
+  const [laborRate, setLaborRate] = useState(65)
+  const estimates = useQuery({
+    queryKey: ['manufacturing-estimates', selectedId],
+    queryFn: () => platform.manufacturingEstimates(selectedId!),
+    enabled: Boolean(selectedId),
+  })
+  const create = useMutation({
+    mutationFn: () => {
+      if (!selectedId || !revision) throw new Error('Select a validated part revision')
+      return platform.createManufacturingEstimate(selectedId, {
+        revision_id: revision.id,
+        process,
+        quantity,
+        material_cost_per_kg: materialRate,
+        machine_rate_per_hour: machineRate,
+        labor_rate_per_hour: laborRate,
+        overhead_percent: 18,
+      })
+    },
+    onSuccess: () => cache.invalidateQueries({ queryKey: ['manufacturing-estimates', selectedId] }),
+  })
+  const result = create.data ?? estimates.data?.[0]
+  return (
+    <section className="eng-expansion-shell">
+      <header className="eng-expansion-head"><div><span>Cost and process planning</span><h2>Manufacturing estimates</h2><p>Build a transparent budgetary estimate from validated geometry, material mass, process throughput, setup time, and editable shop rates.</p></div><DesignSelector designs={designs} selectedId={selectedId} selectDesign={selectDesign} /></header>
+      <div className="eng-analysis-grid">
+        <aside className="eng-config-panel">
+          <div className="eng-panel-title"><Factory size={15} /><strong>Estimate inputs</strong><span>USD</span></div>
+          <label>Process<select value={process} onChange={(event) => setProcess(event.target.value as typeof process)}><option value="sheet_metal">Sheet metal</option><option value="cnc_milling">CNC milling</option><option value="laser_cut">Laser cutting</option><option value="fdm_print">FDM printing</option></select></label>
+          <label>Quantity<input type="number" min="1" value={quantity} onChange={(event) => setQuantity(Number(event.target.value))} /></label>
+          <label>Material cost / kg<input type="number" min="0.01" step="0.1" value={materialRate} onChange={(event) => setMaterialRate(Number(event.target.value))} /></label>
+          <label>Machine rate / hour<input type="number" min="0.01" step="1" value={machineRate} onChange={(event) => setMachineRate(Number(event.target.value))} /></label>
+          <label>Labor rate / hour<input type="number" min="0.01" step="1" value={laborRate} onChange={(event) => setLaborRate(Number(event.target.value))} /></label>
+          <button className="growth-primary eng-wide-action" type="button" disabled={!revision || revision.status !== 'validated' || create.isPending} onClick={() => create.mutate()}>{create.isPending ? <LoaderCircle className="eng-spin" size={15} /> : <Calculator size={15} />} Calculate estimate</button>
+          {create.error && <p className="st-error">{create.error.message}</p>}
+          <p className="st-fine">Using {design?.name ?? 'selected part'} · revision {revision?.revision ?? '—'}</p>
+        </aside>
+        <div className="eng-expansion-results">
+          {!result ? <div className="eng-empty expansion"><Factory size={32} /><h2>Know the cost drivers.</h2><p>Select a process and enter your local material, machine, and labor rates.</p></div> : <ManufacturingResult result={result} />}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function ManufacturingResult({ result }: { result: ManufacturingEstimate }) {
+  return <><div className="eng-result-title"><div><span>{result.process.replaceAll('_', ' ')} · {result.confidence} confidence</span><h3>Budgetary manufacturing estimate</h3></div><span className="eng-estimate-total">${result.total_cost.toFixed(2)}</span></div><div className="eng-result-metrics"><div><small>Unit cost</small><strong>${result.unit_cost.toFixed(2)}</strong></div><div><small>Quantity</small><strong>{result.quantity}</strong></div><div><small>Mass each</small><strong>{result.mass_kg_each.toFixed(3)} kg</strong></div><div><small>Run time each</small><strong>{result.run_minutes_each.toFixed(1)} min</strong></div></div><div className="eng-cost-layout"><section className="eng-card"><div className="eng-panel-title"><Calculator size={15} /><strong>Cost breakdown</strong><span>order</span></div>{Object.entries(result.breakdown).map(([key, value]) => <div className="eng-cost-row" key={key}><span>{key}</span><strong>${value.toFixed(2)}</strong></div>)}</section><section className="eng-card"><div className="eng-panel-title"><AlertTriangle size={15} /><strong>Assumptions</strong><span>{result.assumptions.length}</span></div><ul className="eng-assumption-list">{result.assumptions.map((item) => <li key={item}>{item}</li>)}</ul></section></div><div className="eng-safety"><AlertTriangle size={17} /><div><strong>Estimate boundary</strong><p>{result.notice}</p></div></div></>
+}
+
+function SimulationsWorkspace({ designs, selectedId, selectDesign, design, revision }: {
+  designs: EngineeringDesign[]
+  selectedId: string | null
+  selectDesign: (id: string) => void
+  design?: EngineeringDesign
+  revision?: EngineeringRevision
+}) {
+  const cache = useQueryClient()
+  const [type, setType] = useState<'static_screening' | 'thermal_expansion' | 'modal_screening'>('static_screening')
+  const [load, setLoad] = useState(250)
+  const [span, setSpan] = useState(200)
+  const [temperature, setTemperature] = useState(60)
+  const simulations = useQuery({
+    queryKey: ['engineering-simulations', selectedId],
+    queryFn: () => platform.engineeringSimulations(selectedId!),
+    enabled: Boolean(selectedId),
+  })
+  const create = useMutation({
+    mutationFn: () => {
+      if (!selectedId || !revision) throw new Error('Select a validated part revision')
+      return platform.createEngineeringSimulation(selectedId, {
+        revision_id: revision.id,
+        simulation_type: type,
+        boundary_condition: 'cantilever_fixed',
+        span_mm: span,
+        ...(type === 'static_screening' ? { load_n: load } : {}),
+        ...(type === 'thermal_expansion' ? { delta_temperature_c: temperature } : {}),
+      })
+    },
+    onSuccess: () => cache.invalidateQueries({ queryKey: ['engineering-simulations', selectedId] }),
+  })
+  const result = create.data ?? simulations.data?.[0]
+  return (
+    <section className="eng-expansion-shell">
+      <header className="eng-expansion-head"><div><span>Deterministic engineering screening</span><h2>Simulations</h2><p>Compare static deflection, thermal expansion, and first-mode response using explicit idealized methods and visible assumptions.</p></div><DesignSelector designs={designs} selectedId={selectedId} selectDesign={selectDesign} /></header>
+      <div className="eng-analysis-grid">
+        <aside className="eng-config-panel">
+          <div className="eng-panel-title"><Gauge size={15} /><strong>Load case</strong><span>cantilever</span></div>
+          <label>Simulation<select value={type} onChange={(event) => setType(event.target.value as typeof type)}><option value="static_screening">Static deflection</option><option value="thermal_expansion">Thermal expansion</option><option value="modal_screening">First natural frequency</option></select></label>
+          <label>Effective span (mm)<input type="number" min="0.1" value={span} onChange={(event) => setSpan(Number(event.target.value))} /></label>
+          {type === 'static_screening' && <label>End load (N)<input type="number" min="0.1" value={load} onChange={(event) => setLoad(Number(event.target.value))} /></label>}
+          {type === 'thermal_expansion' && <label>Temperature change (°C)<input type="number" value={temperature} onChange={(event) => setTemperature(Number(event.target.value))} /></label>}
+          <div className="eng-boundary-box"><strong>Fixed boundary</strong><p>Uniform rectangular cantilever idealization. Real joints, contacts, holes, and local effects are omitted.</p></div>
+          <button className="growth-primary eng-wide-action" type="button" disabled={!revision || revision.status !== 'validated' || create.isPending} onClick={() => create.mutate()}>{create.isPending ? <LoaderCircle className="eng-spin" size={15} /> : <Gauge size={15} />} Run screening</button>
+          {create.error && <p className="st-error">{create.error.message}</p>}
+          <p className="st-fine">Using {design?.name ?? 'selected part'} · revision {revision?.revision ?? '—'}</p>
+        </aside>
+        <div className="eng-expansion-results">
+          {!result ? <div className="eng-empty expansion"><Gauge size={32} /><h2>Test an explicit load case.</h2><p>Choose a screening method and enter the known load, span, or temperature change.</p></div> : <SimulationResult result={result} />}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function SimulationResult({ result }: { result: EngineeringSimulation }) {
+  return <><div className="eng-result-title"><div><span>{result.simulation_type.replaceAll('_', ' ')}</span><h3>Screening results</h3><p>{result.method}</p></div><span className="eng-screening-badge">Screening only</span></div><div className="eng-simulation-results">{Object.entries(result.results).map(([key, value]) => <article key={key}><small>{key.replaceAll('_', ' ')}</small><strong>{value == null ? '—' : Number(value).toLocaleString(undefined, { maximumFractionDigits: 5 })}</strong></article>)}</div><div className="eng-cost-layout"><section className="eng-card"><div className="eng-panel-title"><Calculator size={15} /><strong>Model inputs</strong><span>explicit</span></div>{Object.entries(result.inputs).map(([key, value]) => <div className="eng-cost-row" key={key}><span>{key.replaceAll('_', ' ')}</span><strong>{String(value)}</strong></div>)}</section><section className="eng-card"><div className="eng-panel-title"><CheckCircle2 size={15} /><strong>Verification required</strong><span>{result.verification_required.length}</span></div><ol className="eng-assumption-list">{result.verification_required.map((item) => <li key={item}>{item}</li>)}</ol></section></div><section className="eng-card eng-model-assumptions"><div className="eng-panel-title"><AlertTriangle size={15} /><strong>Model assumptions</strong><span>{result.assumptions.length}</span></div><ul className="eng-assumption-list">{result.assumptions.map((item) => <li key={item}>{item}</li>)}</ul></section><div className="eng-safety"><AlertTriangle size={17} /><div><strong>Simulation boundary</strong><p>{result.safety_notice}</p></div></div></>
 }
 
 function EmptyWorkspace() {

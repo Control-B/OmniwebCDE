@@ -34,7 +34,10 @@ no patent-coverage claim.
 `/projects/<id>/engineering` is the integrated parametric mechanical-design workspace.
 It extracts editable requirements, generates genuine CadQuery/OpenCascade STEP and STL
 geometry, creates PDF and DXF drawings, displays an interactive Three.js preview, runs
-Level 1 geometry validation, and preserves immutable revisions and review decisions.
+Level 1 geometry validation, and preserves immutable revisions and review decisions. The
+workspace also creates multi-part STEP assemblies with BOMs and interference evidence,
+transparent manufacturing cost estimates, and deterministic static, thermal, and modal
+screening calculations.
 Supported MVP components are plates, equal-leg L brackets, cylindrical spacers, and
 open-top enclosures. See
 [`docs/engineering-design-agent.md`](docs/engineering-design-agent.md) for service

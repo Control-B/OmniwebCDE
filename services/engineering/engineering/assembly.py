@@ -44,7 +44,7 @@ def generate_assembly(request: AssemblyGenerateRequest) -> AssemblyGenerateRespo
     bill_of_materials: list[dict] = []
     total_mass = 0.0
 
-    for member in request.members:
+    for member_position, member in enumerate(request.members):
         shape, _ = build_shape(member.requirements)
         solid = shape.val()
         density = DENSITY_KG_PER_MM3.get(member.requirements.material.lower())
@@ -69,7 +69,7 @@ def generate_assembly(request: AssemblyGenerateRequest) -> AssemblyGenerateRespo
                 for axis in range(3)
             ]
             location = _location(translation, member.rotation_deg)
-            instance_name = f"{member.name}-{index + 1}"
+            instance_name = f"{member.name}-{member_position + 1}-{index + 1}"
             assembly.add(solid, name=instance_name, loc=location)
             placed.append((instance_name, solid.located(location)))
 
