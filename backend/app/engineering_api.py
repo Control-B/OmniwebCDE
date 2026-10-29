@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import time
 import uuid
 from datetime import UTC, datetime
@@ -13,13 +15,18 @@ from .config import Settings, get_settings
 from .database import get_db
 from .engineering import service, worker
 from .intelligence_models import (
+    AssemblyArtifact,
+    AssemblyRevision,
     CapabilityEdge,
     DesignRequirement,
     DesignRevision,
     EngineeringArtifact,
+    EngineeringAssembly,
     EngineeringDesign,
     EngineeringFeedback,
     EngineeringJob,
+    EngineeringSimulation,
+    ManufacturingEstimate,
 )
 from .models import Approval
 from .projects_api import audit, project_access
@@ -534,6 +541,490 @@ async def record_feedback(
     audit(db, principal, "engineering.feedback.create", "engineering_feedback", str(feedback.id))
     await db.commit()
     return {"id": str(feedback.id), "recommendation": recommendation}
+
+
+async def owned_revision_for_design(
+    db: AsyncSession,
+    principal: Principal,
+    design: EngineeringDesign,
+    revision_id: uuid.UUID,
+) -> tuple[DesignRevision, DesignRequirement]:
+    revision = await db.scalar(
+        select(DesignRevision).where(
+            DesignRevision.id == revision_id,
+            DesignRevision.design_id == design.id,
+            DesignRevision.organization_id == principal.organization_id,
+        )
+    )
+    if not revision:
+        raise HTTPException(status_code=404, detail="Engineering revision not found")
+    requirement = await db.scalar(
+        select(DesignRequirement).where(DesignRequirement.revision_id == revision.id)
+    )
+    if not requirement:
+        raise HTTPException(status_code=409, detail="Engineering requirements are unavailable")
+    return revision, requirement
+
+
+class AssemblyMemberInput(BaseModel):
+    revision_id: uuid.UUID
+    quantity: int = Field(default=1, ge=1, le=20)
+    translation_mm: list[float] = Field(
+        default_factory=lambda: [0, 0, 0], min_length=3, max_length=3
+    )
+    rotation_deg: list[float] = Field(
+        default_factory=lambda: [0, 0, 0], min_length=3, max_length=3
+    )
+    instance_spacing_mm: list[float] = Field(
+        default_factory=lambda: [0, 0, 0], min_length=3, max_length=3
+    )
+
+
+class AssemblyCreate(BaseModel):
+    project_id: uuid.UUID
+    name: str = Field(min_length=2, max_length=160)
+    members: list[AssemblyMemberInput] = Field(min_length=2, max_length=50)
+    idempotency_key: str = Field(pattern=r"^[A-Za-z0-9_.:-]{8,100}$")
+
+
+async def assembly_revision_view(db: AsyncSession, revision: AssemblyRevision) -> dict:
+    artifacts = list(
+        await db.scalars(
+            select(AssemblyArtifact)
+            .where(AssemblyArtifact.assembly_revision_id == revision.id)
+            .order_by(AssemblyArtifact.format)
+        )
+    )
+    return {
+        "id": str(revision.id),
+        "revision": revision.revision,
+        "status": revision.status,
+        "definition": revision.definition,
+        "geometry": revision.geometry,
+        "preview": revision.preview_mesh,
+        "validation_checks": revision.validation_checks,
+        "bill_of_materials": revision.bill_of_materials,
+        "safety_notice": revision.safety_notice,
+        "artifacts": [
+            {
+                "id": str(item.id),
+                "kind": item.kind,
+                "format": item.format,
+                "filename": item.filename,
+                "media_type": item.media_type,
+                "sha256": item.sha256,
+                "size": item.size,
+            }
+            for item in artifacts
+        ],
+        "created_at": revision.created_at.isoformat(),
+    }
+
+
+async def assembly_view(
+    db: AsyncSession, assembly: EngineeringAssembly, *, detail: bool = False
+) -> dict:
+    result = {
+        "id": str(assembly.id),
+        "project_id": str(assembly.project_id),
+        "name": assembly.name,
+        "status": assembly.status,
+        "current_revision": assembly.current_revision,
+        "created_at": assembly.created_at.isoformat(),
+        "updated_at": assembly.updated_at.isoformat(),
+    }
+    if detail:
+        revisions = list(
+            await db.scalars(
+                select(AssemblyRevision)
+                .where(AssemblyRevision.assembly_id == assembly.id)
+                .order_by(AssemblyRevision.revision.desc())
+            )
+        )
+        result["revisions"] = [
+            await assembly_revision_view(db, revision) for revision in revisions
+        ]
+    return result
+
+
+async def owned_assembly(
+    db: AsyncSession, principal: Principal, assembly_id: uuid.UUID, *, write: bool = False
+) -> EngineeringAssembly:
+    assembly = await db.scalar(
+        select(EngineeringAssembly).where(
+            EngineeringAssembly.id == assembly_id,
+            EngineeringAssembly.organization_id == principal.organization_id,
+        )
+    )
+    if not assembly:
+        raise HTTPException(status_code=404, detail="Engineering assembly not found")
+    await project_access(db, assembly.project_id, principal, write=write)
+    return assembly
+
+
+@router.post("/assemblies", status_code=status.HTTP_201_CREATED)
+async def create_assembly(
+    data: AssemblyCreate,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_principal),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    await project_access(db, data.project_id, principal, write=True)
+    if sum(member.quantity for member in data.members) > 50:
+        raise HTTPException(status_code=422, detail="An assembly is limited to 50 instances")
+    existing = await db.scalar(
+        select(EngineeringAssembly).where(
+            EngineeringAssembly.organization_id == principal.organization_id,
+            EngineeringAssembly.idempotency_key == data.idempotency_key,
+        )
+    )
+    if existing:
+        return await assembly_view(db, existing, detail=True)
+
+    members = []
+    for member in data.members:
+        revision = await db.scalar(
+            select(DesignRevision).where(
+                DesignRevision.id == member.revision_id,
+                DesignRevision.organization_id == principal.organization_id,
+                DesignRevision.status == "validated",
+            )
+        )
+        if not revision:
+            raise HTTPException(
+                status_code=422,
+                detail="Assemblies require geometrically validated design revisions",
+            )
+        design = await owned_design(db, principal, revision.design_id)
+        if design.project_id != data.project_id:
+            raise HTTPException(status_code=422, detail="Assembly members must share a project")
+        requirement = await db.scalar(
+            select(DesignRequirement).where(DesignRequirement.revision_id == revision.id)
+        )
+        members.append(
+            {
+                "member_id": str(revision.id),
+                "name": design.name,
+                "requirements": requirement.normalized,
+                **member.model_dump(mode="json", exclude={"revision_id"}),
+            }
+        )
+
+    assembly = EngineeringAssembly(
+        organization_id=principal.organization_id,
+        project_id=data.project_id,
+        name=data.name,
+        idempotency_key=data.idempotency_key,
+        created_by=principal.user_id,
+    )
+    db.add(assembly)
+    await db.flush()
+    definition = {"name": data.name, "members": members}
+    revision = AssemblyRevision(
+        assembly_id=assembly.id,
+        organization_id=principal.organization_id,
+        revision=1,
+        definition=definition,
+        created_by=principal.user_id,
+    )
+    db.add(revision)
+    await db.flush()
+    try:
+        result = await service.generate_assembly(
+            settings,
+            {
+                "assembly_id": str(assembly.id),
+                "revision": 1,
+                **definition,
+            },
+        )
+    except (service.EngineeringUnavailable, ValueError) as exc:
+        await db.rollback()
+        status_code = 503 if isinstance(exc, service.EngineeringUnavailable) else 422
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+
+    total_bytes = 0
+    for payload in result["artifacts"]:
+        artifact_data = base64.b64decode(payload["data_base64"], validate=True)
+        digest = hashlib.sha256(artifact_data).hexdigest()
+        if digest != payload["sha256"] or len(artifact_data) != payload["size"]:
+            await db.rollback()
+            raise HTTPException(status_code=502, detail="Assembly artifact integrity failed")
+        total_bytes += len(artifact_data)
+        if total_bytes > settings.engineering_max_artifact_bytes:
+            await db.rollback()
+            raise HTTPException(status_code=413, detail="Assembly artifact budget exceeded")
+        location, stored_digest = AssetStore(settings).put(
+            principal.organization_id, artifact_data, payload["format"]
+        )
+        if stored_digest != digest:
+            await db.rollback()
+            raise HTTPException(status_code=502, detail="Assembly storage integrity failed")
+        db.add(
+            AssemblyArtifact(
+                assembly_revision_id=revision.id,
+                organization_id=principal.organization_id,
+                kind=payload["kind"],
+                format=payload["format"],
+                filename=payload["filename"][:240],
+                media_type=payload["media_type"][:100],
+                storage_location=location,
+                sha256=digest,
+                size=len(artifact_data),
+            )
+        )
+    revision.status = result["status"]
+    revision.geometry = result["geometry"]
+    revision.preview_mesh = result["preview"]
+    revision.validation_checks = result["checks"]
+    revision.bill_of_materials = result["bill_of_materials"]
+    revision.safety_notice = result["safety_notice"]
+    assembly.status = result["status"]
+    audit(db, principal, "engineering.assembly.create", "engineering_assembly", str(assembly.id))
+    await db.commit()
+    return await assembly_view(db, assembly, detail=True)
+
+
+@router.get("/assemblies")
+async def list_assemblies(
+    project_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_principal),
+) -> list[dict]:
+    await project_access(db, project_id, principal)
+    rows = await db.scalars(
+        select(EngineeringAssembly)
+        .where(
+            EngineeringAssembly.project_id == project_id,
+            EngineeringAssembly.organization_id == principal.organization_id,
+        )
+        .order_by(EngineeringAssembly.updated_at.desc())
+    )
+    return [await assembly_view(db, row) for row in rows]
+
+
+@router.get("/assemblies/{assembly_id}")
+async def get_assembly(
+    assembly_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_principal),
+) -> dict:
+    assembly = await owned_assembly(db, principal, assembly_id)
+    return await assembly_view(db, assembly, detail=True)
+
+
+class ManufacturingEstimateInput(BaseModel):
+    revision_id: uuid.UUID
+    process: Literal["sheet_metal", "cnc_milling", "laser_cut", "fdm_print"]
+    quantity: int = Field(default=1, ge=1, le=100_000)
+    material_cost_per_kg: float = Field(gt=0, le=100_000)
+    machine_rate_per_hour: float = Field(gt=0, le=100_000)
+    labor_rate_per_hour: float = Field(gt=0, le=100_000)
+    overhead_percent: float = Field(default=15, ge=0, le=200)
+
+
+@router.post("/designs/{design_id}/manufacturing-estimates", status_code=201)
+async def create_manufacturing_estimate(
+    design_id: uuid.UUID,
+    data: ManufacturingEstimateInput,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_principal),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    design = await owned_design(db, principal, design_id, write=True)
+    revision, requirement = await owned_revision_for_design(
+        db, principal, design, data.revision_id
+    )
+    if revision.status != "validated":
+        raise HTTPException(status_code=409, detail="Estimate requires validated geometry")
+    inputs = data.model_dump(mode="json", exclude={"revision_id"})
+    try:
+        result = await service.estimate_manufacturing(
+            settings,
+            {
+                "requirements": requirement.normalized,
+                "geometry": revision.geometry,
+                **inputs,
+            },
+        )
+    except (service.EngineeringUnavailable, ValueError) as exc:
+        status_code = 503 if isinstance(exc, service.EngineeringUnavailable) else 422
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    estimate = ManufacturingEstimate(
+        revision_id=revision.id,
+        organization_id=principal.organization_id,
+        process=data.process,
+        quantity=data.quantity,
+        inputs=inputs,
+        result=result,
+        created_by=principal.user_id,
+    )
+    db.add(estimate)
+    await db.flush()
+    audit(
+        db,
+        principal,
+        "engineering.manufacturing.estimate",
+        "manufacturing_estimate",
+        str(estimate.id),
+    )
+    await db.commit()
+    return {
+        "id": str(estimate.id),
+        "revision_id": str(revision.id),
+        "created_at": estimate.created_at.isoformat(),
+        **result,
+    }
+
+
+@router.get("/designs/{design_id}/manufacturing-estimates")
+async def list_manufacturing_estimates(
+    design_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_principal),
+) -> list[dict]:
+    design = await owned_design(db, principal, design_id)
+    revision_ids = select(DesignRevision.id).where(DesignRevision.design_id == design.id)
+    rows = await db.scalars(
+        select(ManufacturingEstimate)
+        .where(
+            ManufacturingEstimate.organization_id == principal.organization_id,
+            ManufacturingEstimate.revision_id.in_(revision_ids),
+        )
+        .order_by(ManufacturingEstimate.created_at.desc())
+    )
+    return [
+        {
+            "id": str(row.id),
+            "revision_id": str(row.revision_id),
+            "created_at": row.created_at.isoformat(),
+            **row.result,
+        }
+        for row in rows
+    ]
+
+
+class SimulationInput(BaseModel):
+    revision_id: uuid.UUID
+    simulation_type: Literal[
+        "static_screening", "thermal_expansion", "modal_screening"
+    ]
+    load_n: float | None = Field(default=None, gt=0, le=100_000_000)
+    span_mm: float | None = Field(default=None, gt=0, le=100_000)
+    delta_temperature_c: float | None = Field(default=None, ge=-1_000, le=10_000)
+    boundary_condition: Literal["cantilever_fixed"] = "cantilever_fixed"
+
+
+@router.post("/designs/{design_id}/simulations", status_code=201)
+async def create_simulation(
+    design_id: uuid.UUID,
+    data: SimulationInput,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_principal),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    design = await owned_design(db, principal, design_id, write=True)
+    revision, requirement = await owned_revision_for_design(
+        db, principal, design, data.revision_id
+    )
+    if revision.status != "validated":
+        raise HTTPException(status_code=409, detail="Simulation requires validated geometry")
+    inputs = data.model_dump(mode="json", exclude={"revision_id"})
+    try:
+        result = await service.run_simulation(
+            settings,
+            {
+                "requirements": requirement.normalized,
+                "geometry": revision.geometry,
+                **inputs,
+            },
+        )
+    except (service.EngineeringUnavailable, ValueError) as exc:
+        status_code = 503 if isinstance(exc, service.EngineeringUnavailable) else 422
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    simulation = EngineeringSimulation(
+        revision_id=revision.id,
+        organization_id=principal.organization_id,
+        simulation_type=data.simulation_type,
+        inputs=inputs,
+        result=result,
+        created_by=principal.user_id,
+    )
+    db.add(simulation)
+    await db.flush()
+    audit(
+        db,
+        principal,
+        "engineering.simulation.create",
+        "engineering_simulation",
+        str(simulation.id),
+    )
+    await db.commit()
+    return {
+        "id": str(simulation.id),
+        "revision_id": str(revision.id),
+        "created_at": simulation.created_at.isoformat(),
+        **result,
+    }
+
+
+@router.get("/designs/{design_id}/simulations")
+async def list_simulations(
+    design_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_principal),
+) -> list[dict]:
+    design = await owned_design(db, principal, design_id)
+    revision_ids = select(DesignRevision.id).where(DesignRevision.design_id == design.id)
+    rows = await db.scalars(
+        select(EngineeringSimulation)
+        .where(
+            EngineeringSimulation.organization_id == principal.organization_id,
+            EngineeringSimulation.revision_id.in_(revision_ids),
+        )
+        .order_by(EngineeringSimulation.created_at.desc())
+    )
+    return [
+        {
+            "id": str(row.id),
+            "revision_id": str(row.revision_id),
+            "created_at": row.created_at.isoformat(),
+            **row.result,
+        }
+        for row in rows
+    ]
+
+
+@router.get("/assembly-artifacts/{artifact_id}")
+async def download_assembly_artifact(
+    artifact_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(get_principal),
+    settings: Settings = Depends(get_settings),
+) -> Response:
+    artifact = await db.scalar(
+        select(AssemblyArtifact).where(
+            AssemblyArtifact.id == artifact_id,
+            AssemblyArtifact.organization_id == principal.organization_id,
+        )
+    )
+    if not artifact:
+        raise HTTPException(status_code=404, detail="Assembly artifact not found")
+    revision = await db.get(AssemblyRevision, artifact.assembly_revision_id)
+    await owned_assembly(db, principal, revision.assembly_id)
+    artifact_data = AssetStore(settings).read(
+        principal.organization_id, artifact.storage_location
+    )
+    if (
+        len(artifact_data) != artifact.size
+        or hashlib.sha256(artifact_data).hexdigest() != artifact.sha256
+    ):
+        raise HTTPException(status_code=500, detail="Assembly artifact integrity failed")
+    return Response(
+        artifact_data,
+        media_type=artifact.media_type,
+        headers={"Content-Disposition": f'attachment; filename="{artifact.filename}"'},
+    )
 
 
 async def owned_artifact(

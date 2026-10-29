@@ -7,9 +7,16 @@ import pytest
 
 ENGINEERING_DIR = Path(__file__).resolve().parents[2] / "services" / "engineering"
 sys.path.insert(0, str(ENGINEERING_DIR))
+from engineering.analysis import estimate_manufacturing, run_simulation  # noqa: E402
+from engineering.assembly import generate_assembly as cad_generate_assembly  # noqa: E402
 from engineering.cad import generate as cad_generate  # noqa: E402
 from engineering.requirements import extract_requirements  # noqa: E402
-from engineering.schemas import GenerateRequest  # noqa: E402
+from engineering.schemas import (  # noqa: E402
+    AssemblyGenerateRequest,
+    GenerateRequest,
+    ManufacturingEstimateRequest,
+    SimulationRequest,
+)
 
 from app.engineering import service  # noqa: E402
 
@@ -22,8 +29,22 @@ def local_engineering(monkeypatch):
     async def generate(_settings, body):
         return cad_generate(GenerateRequest(**body)).model_dump(mode="json")
 
+    async def generate_assembly(_settings, body):
+        return cad_generate_assembly(AssemblyGenerateRequest(**body)).model_dump(mode="json")
+
+    async def estimate(_settings, body):
+        return estimate_manufacturing(ManufacturingEstimateRequest(**body)).model_dump(
+            mode="json"
+        )
+
+    async def simulate(_settings, body):
+        return run_simulation(SimulationRequest(**body)).model_dump(mode="json")
+
     monkeypatch.setattr(service, "extract", extract)
     monkeypatch.setattr(service, "generate", generate)
+    monkeypatch.setattr(service, "generate_assembly", generate_assembly)
+    monkeypatch.setattr(service, "estimate_manufacturing", estimate)
+    monkeypatch.setattr(service, "run_simulation", simulate)
 
 
 def project(client):
@@ -165,6 +186,116 @@ def test_failed_engineering_job_can_be_retried_without_new_revision(
     assert recovered["status"] == "validated"
     assert recovered["job"]["attempts"] == 2
     assert design["current_revision"] == 1
+
+
+def test_assemblies_manufacturing_estimates_and_simulations_are_traceable(
+    client, local_engineering
+):
+    row = project(client)
+    bracket = client.post(
+        "/api/v1/engineering/designs",
+        json={
+            "project_id": row["id"],
+            "prompt": (
+                "Design an L-shaped steel bracket, 200 mm long, 80 mm wide, "
+                "6 mm thick with four 10 mm holes."
+            ),
+            "idempotency_key": f"engineering-bracket-{uuid.uuid4().hex}",
+        },
+    ).json()
+    spacer = client.post(
+        "/api/v1/engineering/designs",
+        json={
+            "project_id": row["id"],
+            "prompt": (
+                "Design an aluminum spacer 30 mm outer diameter, "
+                "12 mm inner diameter, 20 mm long."
+            ),
+            "idempotency_key": f"engineering-spacer-{uuid.uuid4().hex}",
+        },
+    ).json()
+    _, bracket_revision = wait_design(client, bracket["id"])
+    _, spacer_revision = wait_design(client, spacer["id"])
+
+    assembly = client.post(
+        "/api/v1/engineering/assemblies",
+        json={
+            "project_id": row["id"],
+            "name": "Bracket and spacer assembly",
+            "idempotency_key": f"assembly-{uuid.uuid4().hex}",
+            "members": [
+                {"revision_id": bracket_revision["id"]},
+                {
+                    "revision_id": spacer_revision["id"],
+                    "quantity": 2,
+                    "translation_mm": [-50, 0, 6],
+                    "instance_spacing_mm": [100, 0, 0],
+                },
+            ],
+        },
+    )
+    assert assembly.status_code == 201, assembly.text
+    assembly_revision = assembly.json()["revisions"][0]
+    assert assembly_revision["status"] == "validated"
+    assert assembly_revision["geometry"]["member_instances"] == 3
+    assert len(assembly_revision["bill_of_materials"]) == 2
+    assembly_artifacts = {
+        (item["kind"], item["format"]): item
+        for item in assembly_revision["artifacts"]
+    }
+    step = client.get(
+        "/api/v1/engineering/assembly-artifacts/"
+        f"{assembly_artifacts[('assembly_model', 'step')]['id']}"
+    )
+    assert step.status_code == 200
+    assert step.content.startswith(b"ISO-10303")
+
+    estimate = client.post(
+        f"/api/v1/engineering/designs/{bracket['id']}/manufacturing-estimates",
+        json={
+            "revision_id": bracket_revision["id"],
+            "process": "sheet_metal",
+            "quantity": 25,
+            "material_cost_per_kg": 2.4,
+            "machine_rate_per_hour": 95,
+            "labor_rate_per_hour": 65,
+            "overhead_percent": 18,
+        },
+    )
+    assert estimate.status_code == 201, estimate.text
+    assert estimate.json()["status"] == "budgetary_estimate"
+    assert estimate.json()["total_cost"] > 0
+    assert "not a supplier quote" in estimate.json()["notice"]
+
+    simulation = client.post(
+        f"/api/v1/engineering/designs/{bracket['id']}/simulations",
+        json={
+            "revision_id": bracket_revision["id"],
+            "simulation_type": "static_screening",
+            "load_n": 250,
+            "span_mm": 200,
+        },
+    )
+    assert simulation.status_code == 201, simulation.text
+    assert simulation.json()["status"] == "screening_complete"
+    assert simulation.json()["results"]["tip_deflection_mm"] > 0
+    assert "not finite-element analysis" in simulation.json()["safety_notice"]
+    assert (
+        next(
+            check
+            for check in simulation.json()["checks"]
+            if check["key"] == "structural_safety"
+        )["status"]
+        == "not_evaluated"
+    )
+    assert len(
+        client.get(
+            f"/api/v1/engineering/designs/{bracket['id']}/manufacturing-estimates"
+        ).json()
+    ) == 1
+    assert len(
+        client.get(f"/api/v1/engineering/designs/{bracket['id']}/simulations").json()
+    ) == 1
 
 
 def test_engineering_feedback_requires_authorized_evidence(client, local_engineering):
