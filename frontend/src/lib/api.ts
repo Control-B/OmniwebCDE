@@ -454,6 +454,16 @@ export const platform = {
       `/engineering/designs/${designId}/approval-request`,
       { method: 'POST' },
     ),
+  retryEngineeringJob: (jobId: string) =>
+    request<{ id: string; status: string; attempts: number }>(
+      `/engineering/jobs/${jobId}/retry`,
+      { method: 'POST' },
+    ),
+  cancelEngineeringJob: (jobId: string) =>
+    request<{ id: string; status: string }>(
+      `/engineering/jobs/${jobId}/cancel`,
+      { method: 'POST' },
+    ),
 }
 
 export const api = {

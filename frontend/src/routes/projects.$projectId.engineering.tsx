@@ -2,7 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, createFileRoute } from '@tanstack/react-router'
 import {
   AlertTriangle, ArrowLeft, Box, CheckCircle2, Download, DraftingCompass,
-  Eye, FileText, Grid3X3, History, LoaderCircle, RotateCcw, Save, ShieldCheck,
+  Eye, FileText, Grid3X3, History, LoaderCircle, RefreshCcw, RotateCcw, Save,
+  ShieldCheck, XCircle,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
@@ -142,6 +143,15 @@ function DesignEditor({ design, revision }: { design: EngineeringDesign; revisio
     mutationFn: () => platform.requestEngineeringApproval(design.id),
     onSuccess: () => cache.invalidateQueries({ queryKey: ['engineering-design', design.id] }),
   })
+  const jobAction = useMutation({
+    mutationFn: (action: 'retry' | 'cancel') => {
+      if (!revision.job) throw new Error('No engineering job is available')
+      return action === 'retry'
+        ? platform.retryEngineeringJob(revision.job.id)
+        : platform.cancelEngineeringJob(revision.job.id)
+    },
+    onSuccess: () => cache.invalidateQueries({ queryKey: ['engineering-design', design.id] }),
+  })
   const drawing = revision.artifacts.find((item) => item.format === 'pdf')
   const previewDrawing = async () => {
     if (!drawing) return
@@ -162,9 +172,9 @@ function DesignEditor({ design, revision }: { design: EngineeringDesign; revisio
           </button>
         </div>
       </header>
-      {(revision.status === 'queued' || revision.status === 'generating') && <div className="eng-progress"><LoaderCircle className="eng-spin" size={16} /> Building geometry, drawings, and exports in an isolated worker…</div>}
+      {(revision.status === 'queued' || revision.status === 'generating') && <div className="eng-progress"><LoaderCircle className="eng-spin" size={16} /> Building geometry, drawings, and exports in an isolated worker…<button type="button" onClick={() => jobAction.mutate('cancel')} disabled={jobAction.isPending}><XCircle size={13} /> Cancel</button></div>}
       {revision.status === 'requirements_review' && <div className="st-alert"><AlertTriangle size={16} /> Complete the missing critical requirements: {revision.missing_critical.join(', ').replaceAll('_', ' ')}.</div>}
-      {revision.job?.error && <div className="st-alert st-alert-error">{revision.job.error}</div>}
+      {revision.job?.error && <div className="st-alert st-alert-error"><span>{revision.job.error}</span>{revision.job.status === 'failed' && <button type="button" onClick={() => jobAction.mutate('retry')} disabled={jobAction.isPending}><RefreshCcw size={13} /> Retry</button>}</div>}
 
       <div className="eng-main-grid">
         <section className="eng-view-panel">
@@ -189,7 +199,7 @@ function DesignEditor({ design, revision }: { design: EngineeringDesign; revisio
         <RequirementsEditor requirements={requirements} setRequirements={setRequirements} changeNote={changeNote} setChangeNote={setChangeNote} onSave={() => revise.mutate()} saving={revise.isPending} disabled={revision.status === 'queued' || revision.status === 'generating'} />
       </div>
 
-      {(revise.error || approval.error) && <div className="st-alert st-alert-error">{(revise.error ?? approval.error)?.message}</div>}
+      {(revise.error || approval.error || jobAction.error) && <div className="st-alert st-alert-error">{(revise.error ?? approval.error ?? jobAction.error)?.message}</div>}
       {approval.isSuccess && <div className="st-alert"><ShieldCheck size={16} /> Review requested. Approval confirms engineering review only; it does not approve manufacturing.</div>}
 
       <div className="eng-bottom-grid">
