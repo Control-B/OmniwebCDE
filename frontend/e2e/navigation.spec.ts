@@ -19,7 +19,7 @@ test('landing navigation exposes arrow-free accessible mega menus', async ({ pag
 
   await solutions.hover()
   await expect(page.getByRole('link', { name: /Founders/ })).toBeVisible()
-  await expect(page.getByRole('link', { name: /Marketing teams/ })).toBeVisible()
+  await expect(page.getByRole('link', { name: /^Marketers/ })).toBeVisible()
 
   await developers.hover()
   await expect(page.getByRole('link', { name: /Platform overview/ })).toBeVisible()
