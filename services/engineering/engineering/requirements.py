@@ -68,7 +68,7 @@ def extract_requirements(prompt: str) -> ExtractionResult:
     low = prompt.lower()
     assumptions: list[str] = []
     material_match = re.search(
-        r"\b(steel|stainless steel|aluminum|aluminium|brass|copper|abs|polycarbonate|nylon)\b",
+        r"\b(stainless steel|polycarbonate|aluminum|aluminium|steel|brass|copper|nylon|abs)\b",
         low,
     )
     material = material_match.group(1).title() if material_match else None

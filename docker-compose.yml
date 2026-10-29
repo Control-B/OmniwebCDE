@@ -85,6 +85,7 @@ services:
       OMNIWEB_MODEL_GATEWAY_SECRET: ${MODEL_GATEWAY_SECRET:-local-development-gateway-secret-change-me}
       OMNIWEB_AAEE_URL: http://ai-execution-engine:8030
       OMNIWEB_AAEE_SECRET: ${AAEE_SERVICE_SECRET:-local-development-aaee-secret-change-me}
+      OMNIWEB_ENGINEERING_SERVICE_URL: http://engineering:8040
       # Leave OMNIWEB_OIDC_ISSUER empty to use the local development identity. To sign in through
       # Keycloak, set it to http://localhost:8180/realms/omniweb (the issuer browsers see).
       OMNIWEB_OIDC_ISSUER: ${OMNIWEB_OIDC_ISSUER:-}
@@ -105,6 +106,34 @@ services:
         condition: service_started
       ai-execution-engine:
         condition: service_started
+      engineering:
+        condition: service_healthy
+    networks:
+      - default
+      - engineering-internal
+
+  engineering:
+    build:
+      context: ./services/engineering
+    ports:
+      - "8040:8040"
+    read_only: true
+    tmpfs:
+      - /tmp/engineering:rw,noexec,nosuid,size=256m,uid=10001,gid=10001
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 2g
+    cpus: 2
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8040/healthz', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    networks:
+      - engineering-internal
 
   preview:
     build:
@@ -182,3 +211,7 @@ volumes:
   postgres-data:
   redis-data:
   builder-data:
+
+networks:
+  engineering-internal:
+    internal: true

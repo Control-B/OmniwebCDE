@@ -11,7 +11,7 @@ deploys it to DigitalOcean after you approve the cost. See the
 - `/create` is the primary prompt surface for combined software, business planning,
   marketing, text, image, and video requests. AUTO detects multiple intents and creates a
   dependency-aware LangGraph execution; explicit BUILD, BUSINESS, MARKETING, CONTENT,
-  IMAGE, and VIDEO modes remain available.
+  IMAGE, VIDEO, and ENGINEERING modes remain available.
 - `/projects/<id>/growth` keeps plans, campaigns, funnels, blog/content work, CRM leads,
   analytics, automations, and capability improvements in the same project context as the
   application builder.
@@ -28,6 +28,20 @@ migration plan, security boundaries, cost policy, and architecture decisions are
 No patent draft or technical drawings were present in this repository, so the
 traceability report maps only the mechanisms supplied as product requirements and makes
 no patent-coverage claim.
+
+## Engineering Design Agent
+
+`/projects/<id>/engineering` is the integrated parametric mechanical-design workspace.
+It extracts editable requirements, generates genuine CadQuery/OpenCascade STEP and STL
+geometry, creates PDF and DXF drawings, displays an interactive Three.js preview, runs
+Level 1 geometry validation, and preserves immutable revisions and review decisions.
+Supported MVP components are plates, equal-leg L brackets, cylindrical spacers, and
+open-top enclosures. See
+[`docs/engineering-design-agent.md`](docs/engineering-design-agent.md) for service
+boundaries, API contracts, isolation, tests, and limitations.
+
+Geometry validation is not structural analysis, code compliance, engineering
+certification, or approval for manufacturing.
 
 ## Application builder
 
@@ -122,6 +136,7 @@ workspaces dashboard is unchanged and now lives at `/app`.
 - `frontend/` — TanStack Start dashboard, provisioning wizard, workspace details, and xterm console
 - `backend/` — FastAPI control plane: identity, projects, workspaces, provider adapter, and tests
 - `services/model-gateway/` — model discovery, registry, routing, budgets, and usage ledger
+- `services/engineering/` — isolated deterministic parametric CAD, drawing, export, and geometry validation
 - `assets/` — product images and marks
 - `infrastructure/` — Coder template, cloud-init, Caddy, identity, and container configuration
 - `docs/` — architecture, deployment, operations, API, security, and known limitations
@@ -212,6 +227,19 @@ cost-aware router for builder, business, marketing, and content tasks. It uses
 deterministic tools first, then configured GPT-OSS/Grok/OpenAI routes by task phase and
 bounded escalation. Codex is intentionally not a provider. Model estimates and configured
 budget ceilings are controls, not guarantees of provider billing.
+
+### Engineering CAD service
+
+```bash
+cd services/engineering
+python3 -m pip install -e '.[dev]'
+python3 -m uvicorn engineering.main:app --reload --port 8040
+```
+
+The backend calls this service at `OMNIWEB_ENGINEERING_SERVICE_URL`. The service accepts
+validated declarative specifications only and does not execute user- or LLM-authored
+Python. `docker compose up --build` runs it as a non-root, read-only, resource-limited
+service without external network access.
 
 ### Media providers
 

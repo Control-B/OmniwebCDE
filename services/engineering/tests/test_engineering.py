@@ -51,6 +51,13 @@ def test_unit_conversion_and_missing_critical_fields():
     assert {"thickness_mm", "material"} <= set(result.missing_critical)
 
 
+def test_preserves_stainless_steel_material_name():
+    result = extract_requirements(
+        "Design a stainless steel plate 100 mm long, 60 mm wide, and 4 mm thick."
+    )
+    assert result.requirements.material == "Stainless Steel"
+
+
 def _requirements(kind: str) -> DesignRequirements:
     values = {
         "plate": dict(
