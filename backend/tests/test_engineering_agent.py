@@ -296,6 +296,33 @@ def test_assemblies_manufacturing_estimates_and_simulations_are_traceable(
     assert len(
         client.get(f"/api/v1/engineering/designs/{bracket['id']}/simulations").json()
     ) == 1
+    from app.main import app
+    from app.schemas import Principal
+    from app.security import get_principal
+
+    outsider = Principal(
+        user_id=uuid.uuid4(),
+        organization_id=uuid.uuid4(),
+        email="assembly-outsider@example.com",
+        role="owner",
+    )
+    app.dependency_overrides[get_principal] = lambda: outsider
+    try:
+        assert (
+            client.get(
+                f"/api/v1/engineering/assemblies/{assembly.json()['id']}"
+            ).status_code
+            == 404
+        )
+        assert (
+            client.get(
+                "/api/v1/engineering/assembly-artifacts/"
+                f"{assembly_artifacts[('assembly_model', 'step')]['id']}"
+            ).status_code
+            == 404
+        )
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_engineering_feedback_requires_authorized_evidence(client, local_engineering):
