@@ -3,14 +3,23 @@ import {
   ArrowRight,
   ArrowUp,
   AppWindow,
+  BarChart3,
   Blocks,
+  Bot,
+  BriefcaseBusiness,
   Code2,
   Cloud,
+  ContactRound,
+  FileText,
+  GitPullRequestArrow,
   Layers,
+  Megaphone,
   MessageSquareText,
   MonitorSmartphone,
+  PanelsTopLeft,
   Palette,
   Paperclip,
+  Rocket,
   Sparkles,
   Trash2,
   Wand2,
@@ -40,6 +49,125 @@ const APP_SUGGESTIONS = [
   { label: 'Inventory tracker', prompt: 'An inventory tracker for a small warehouse with products, stock levels, suppliers, and purchase orders' },
   { label: 'Habit tracker (mobile)', prompt: 'A mobile habit tracker with daily check-ins, streaks, and reminders' },
 ]
+
+const PRODUCT_ITEMS = [
+  { icon: Sparkles, title: 'Unified Create', text: 'Plan, build, and grow from one prompt.', to: '/create' },
+  { icon: AppWindow, title: 'Application Builder', text: 'Generate and refine production-ready apps.', to: '/projects' },
+  { icon: BriefcaseBusiness, title: 'Business Planner', text: 'Turn evidence and assumptions into a roadmap.', to: '/create' },
+  { icon: Megaphone, title: 'Marketing Studio', text: 'Create campaigns, funnels, and experiments.', to: '/create' },
+  { icon: FileText, title: 'Content Studio', text: 'Produce governed text, image, and video assets.', to: '/create' },
+  { icon: Cloud, title: 'Cloud Workspaces', text: 'Build securely in isolated environments.', to: '/app' },
+  { icon: BarChart3, title: 'AI Usage & Budgets', text: 'Control models, routing, and spend.', to: '/usage' },
+  { icon: GitPullRequestArrow, title: 'Capability Evolution', text: 'Connect product releases and market evidence.', to: '/projects' },
+] as const
+
+const SOLUTION_ITEMS = [
+  { icon: Rocket, title: 'Founders', text: 'Go from market thesis to working product.', to: '/create' },
+  { icon: Megaphone, title: 'Marketing teams', text: 'Operate campaigns and content from one workspace.', to: '/create' },
+  { icon: PanelsTopLeft, title: 'Product teams', text: 'Build, test, and improve customer journeys.', to: '/projects' },
+  { icon: ContactRound, title: 'Agencies', text: 'Manage client apps, campaigns, and assets.', to: '/create' },
+] as const
+
+function LandingNav() {
+  return (
+    <header className="lv-nav">
+      <div className="lv-wrap lv-nav-inner">
+        <Link to="/" className="lv-brand"><span className="lv-mark" />Omniweb</Link>
+        <nav className="lv-links" aria-label="Primary">
+          <div className="lv-menu">
+            <button type="button" className="lv-menu-trigger">Product</button>
+            <MegaMenu
+              eyebrow="Omniweb platform"
+              items={PRODUCT_ITEMS}
+              feature={{
+                kicker: 'One connected system',
+                title: 'Build the product and its growth engine.',
+                text: 'Software, strategy, campaigns, creative, and customer evidence stay in the same project context.',
+                to: '/create',
+                label: 'Explore Unified Create',
+              }}
+            />
+          </div>
+          <div className="lv-menu">
+            <button type="button" className="lv-menu-trigger">Solutions</button>
+            <MegaMenu
+              eyebrow="Built for your team"
+              items={SOLUTION_ITEMS}
+              feature={{
+                kicker: 'Start with an outcome',
+                title: 'A complete campaign from one brief.',
+                text: 'Generate a funnel, landing page, content calendar, creative brief, and measurable objectives together.',
+                to: '/create',
+                label: 'Create a campaign',
+              }}
+            />
+          </div>
+          <div className="lv-menu">
+            <button type="button" className="lv-menu-trigger">Resources</button>
+            <div className="lv-mega lv-mega-resources">
+              <div className="lv-mega-main">
+                <p className="lv-mega-eyebrow">Learn and explore</p>
+                <div className="lv-resource-grid">
+                  <a href="#templates"><strong>Templates</strong><span>Start with a proven foundation.</span></a>
+                  <a href="#how"><strong>How it works</strong><span>See an idea become a working experience.</span></a>
+                  <a href="#features"><strong>Platform features</strong><span>Explore the connected builder.</span></a>
+                  <Link to="/about"><strong>About Omniweb</strong><span>Our approach to adaptive execution.</span></Link>
+                </div>
+              </div>
+              <Link to="/usage" className="lv-mega-feature compact">
+                <span className="lv-feature-orbit"><Bot size={28} /></span>
+                <small>Execution intelligence</small>
+                <strong>Use the right model for every task.</strong>
+                <p>Review routing, provider health, budgets, and recorded usage.</p>
+                <span className="lv-feature-link">Open AI controls</span>
+              </Link>
+            </div>
+          </div>
+          <a href="#templates">Templates</a>
+          <Link to="/usage" hash="pricing">Pricing</Link>
+        </nav>
+        <div className="lv-nav-actions">
+          <Link to="/signin" className="lv-btn lv-btn-ghost">Sign in</Link>
+          <Link to="/projects" className="lv-btn lv-btn-ghost">Projects</Link>
+          <Link to="/create" className="lv-btn lv-btn-light">Get started</Link>
+        </div>
+      </div>
+    </header>
+  )
+}
+
+function MegaMenu({
+  eyebrow,
+  items,
+  feature,
+}: {
+  eyebrow: string
+  items: ReadonlyArray<{ icon: typeof Sparkles; title: string; text: string; to: string }>
+  feature: { kicker: string; title: string; text: string; to: string; label: string }
+}) {
+  return (
+    <div className="lv-mega">
+      <div className="lv-mega-main">
+        <p className="lv-mega-eyebrow">{eyebrow}</p>
+        <div className="lv-mega-grid">
+          {items.map((item) => (
+            <Link key={item.title} to={item.to} className="lv-mega-item">
+              <span><item.icon size={18} /></span>
+              <div><strong>{item.title}</strong><small>{item.text}</small></div>
+            </Link>
+          ))}
+        </div>
+      </div>
+      <Link to={feature.to} className="lv-mega-feature">
+        <span className="lv-feature-orbit"><Layers size={29} /></span>
+        <small>{feature.kicker}</small>
+        <strong>{feature.title}</strong>
+        <p>{feature.text}</p>
+        <span className="lv-feature-link">{feature.label}</span>
+      </Link>
+    </div>
+  )
+}
 
 const TYPED = [
   'a landing page for my coffee roastery…',
@@ -145,31 +273,7 @@ function Landing() {
 
   return (
     <div className="lv">
-      <header className="lv-nav">
-        <div className="lv-wrap lv-nav-inner">
-          <Link to="/" className="lv-brand">
-            <span className="lv-mark" />
-            Omniweb
-          </Link>
-          <nav className="lv-links" aria-label="Primary">
-            <Link to="/create">Unified Create</Link>
-            <Link to="/create">Marketing & content</Link>
-            <a href="#templates">Templates</a>
-            <a href="#how">How it works</a>
-            <a href="#features">Features</a>
-            <Link to="/usage" hash="pricing">Pricing</Link>
-            <Link to="/app">Cloud workspaces</Link>
-          </nav>
-          <div className="lv-nav-actions">
-            <Link to="/signin" className="lv-btn lv-btn-ghost">Sign in</Link>
-            <Link to="/projects" className="lv-btn lv-btn-ghost">Projects</Link>
-            <Link to="/create" className="lv-btn lv-btn-light">Create campaign</Link>
-            <button type="button" className="lv-btn lv-btn-light" onClick={() => inputRef.current?.focus()}>
-              Start building
-            </button>
-          </div>
-        </div>
-      </header>
+      <LandingNav />
 
       <section className="lv-hero">
         <div className="lv-glow" aria-hidden />
