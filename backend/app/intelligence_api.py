@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import Settings, get_settings
 from .database import get_db
-from .intelligence import orchestrator
+from .intelligence import orchestrator, policy
 from .intelligence_models import (
     AssetVersion,
     BusinessPlan,
@@ -59,6 +59,7 @@ def workflow_view(workflow: IntelligenceWorkflow, tasks: list[IntelligenceTask])
         "result": workflow.result,
         "created_at": workflow.created_at.isoformat(),
         "finished_at": workflow.finished_at.isoformat() if workflow.finished_at else None,
+        "assessment": (workflow.context or {}).get("policy_assessment"),
         "tasks": [
             {
                 "id": str(task.id),
@@ -67,6 +68,7 @@ def workflow_view(workflow: IntelligenceWorkflow, tasks: list[IntelligenceTask])
                 "title": task.title,
                 "status": task.status,
                 "depends_on": task.depends_on,
+                "handoff": (task.input or {}).get("handoff"),
                 "output": task.output,
                 "error": task.error,
             }
@@ -115,6 +117,7 @@ async def unified_create(
         )
         return workflow_view(existing, tasks)
     intents = orchestrator.detect_intents(data.prompt, data.mode)
+    assessment = policy.assess(data.prompt, intents)
     workflow = IntelligenceWorkflow(
         organization_id=principal.organization_id,
         project_id=data.project_id,
@@ -122,16 +125,24 @@ async def unified_create(
         mode=data.mode,
         prompt=data.prompt,
         idempotency_key=data.idempotency_key,
-        context=data.context,
+        context={**data.context, "policy_assessment": assessment},
     )
     db.add(workflow)
     await db.flush()
     tasks = []
+    project = str(data.project_id) if data.project_id else None
     for position, definition in enumerate(orchestrator.dependency_graph(intents)):
         task = IntelligenceTask(
             workflow_id=workflow.id,
             organization_id=principal.organization_id,
             position=position,
+            input={
+                "handoff": {
+                    "task_id": f"{workflow.id}:{definition['key']}",
+                    "organization_id": str(principal.organization_id),
+                    **policy.handoff(definition["kind"], definition["key"], assessment, project),
+                }
+            },
             **definition,
         )
         db.add(task)
@@ -140,6 +151,11 @@ async def unified_create(
     await db.commit()
     orchestrator.launch(workflow.id)
     return workflow_view(workflow, tasks)
+
+
+@router.get("/intelligence/policy")
+async def operating_policy(principal: Principal = Depends(get_principal)) -> dict:
+    return policy.summary()
 
 
 @router.get("/intelligence/requests")

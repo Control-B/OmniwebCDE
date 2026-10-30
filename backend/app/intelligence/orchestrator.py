@@ -38,6 +38,7 @@ from ..models import Membership, Project, User
 from ..schemas import Principal
 from ..services import aaee
 from ..services.media import MediaError, providers
+from . import policy
 
 logger = logging.getLogger("omniweb.intelligence")
 _running: dict[uuid.UUID, asyncio.Task] = {}
@@ -182,6 +183,13 @@ async def supervisor(state: GraphState) -> GraphState:
         return {"done": not active}
 
 
+def assessment_for(workflow: IntelligenceWorkflow) -> dict:
+    stored = (workflow.context or {}).get("policy_assessment")
+    if isinstance(stored, dict) and stored.get("policy_version") == policy.POLICY_VERSION:
+        return stored
+    return policy.assess(workflow.prompt, detect_intents(workflow.prompt, workflow.mode))
+
+
 def route(state: GraphState) -> str:
     return END if state.get("done") else "worker"
 
@@ -193,6 +201,8 @@ async def worker(state: GraphState) -> GraphState:
         workflow = await db.get(IntelligenceWorkflow, task.workflow_id)
     try:
         output = await HANDLERS[task.kind](workflow, task)
+        assessment = assessment_for(workflow)
+        output = {**output, "quality_record": policy.quality_record(task.kind, output, assessment)}
         async with SessionLocal() as db:
             row = await db.get(IntelligenceTask, task_id)
             row.status = "completed"
@@ -220,18 +230,24 @@ async def ask_aaee(
 ) -> tuple[dict, dict]:
     settings = get_settings()
     principal = await principal_for(workflow)
+    assessment = assessment_for(workflow)
     body = {
         "task_type": task_type,
         "task_description": workflow.prompt,
         "project_id": str(workflow.project_id) if workflow.project_id else None,
         "development_phase": phase,
         "prompt": {
-            "system": system,
-            "user": workflow.prompt,
+            "system": policy.system_prompt(task.kind, system),
+            "user": policy.untrusted(workflow.prompt),
             "response_format": "json",
-            "max_output_tokens": 8_000,
+            "max_output_tokens": policy.TOKEN_BUDGETS.get(task.kind, 2_000),
         },
-        "context": {"workflow": str(workflow.id), "kind": task.kind},
+        "context": {
+            "workflow": str(workflow.id),
+            "kind": task.kind,
+            "policy_version": policy.POLICY_VERSION,
+            "risk": assessment["risk"],
+        },
         "idempotency_key": f"intel:{workflow.id}:{task.key}",
     }
     try:
@@ -592,6 +608,7 @@ async def handle_engineering(
         "review_notes": [
             "Confirm all critical dimensions and material before manufacturing review.",
             "Level 1 geometry validation does not establish structural safety.",
+            *assessment_for(workflow)["professional_review"],
         ]
     }
     review, usage = await ask_aaee(
