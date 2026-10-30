@@ -1,262 +1,498 @@
+<div align="center">
+
+<img src="assets/omniweb-mark.svg" alt="Omniweb" width="72" />
+
 # Omniweb
 
-Omniweb is an AI application builder and a cloud development environment platform. Describe
-an application and Omniweb generates real source code, checks it in a sandbox, previews it,
-lets you change it by chat, by hand, or by clicking the preview, syncs it to GitHub, and
-deploys it to DigitalOcean after you approve the cost. See the
-[architecture plan](docs/platform-plan.md) for service boundaries and milestone status.
+**One agentic workspace for software, growth, and engineering design.**
 
-## Unified business and marketing intelligence
+Describe what you want. Omniweb plans it, builds it, verifies it, and keeps every
+consequential step behind an approval you control.
 
-- `/create` is the primary prompt surface for combined software, business planning,
-  marketing, text, image, and video requests. AUTO detects multiple intents and creates a
-  dependency-aware LangGraph execution; explicit BUILD, BUSINESS, MARKETING, CONTENT,
-  IMAGE, VIDEO, and ENGINEERING modes remain available.
-- `/projects/<id>/growth` keeps plans, campaigns, funnels, blog/content work, CRM leads,
-  analytics, automations, and capability improvements in the same project context as the
-  application builder.
-- Business plans distinguish sourced claims from assumptions and projections. Marketing
-  analytics report only recorded events. Publication, paid actions, media generation, and
-  software releases are explicit approval gates.
-- The capability-evolution service links authorized evidence to hypotheses, catalog
-  matches, implementation runs, tests, releases, marketing proposals, and measured
-  outcomes in both directions. Correlation is never labelled causation.
+[Features](#features) · [Architecture](#architecture) · [Quick start](#quick-start) ·
+[Configuration](#configuration) · [Testing](#testing) · [Safety](#safety-and-governance) ·
+[Docs](#documentation)
 
-The detailed inventory, patent-source gap, traceability matrix, contracts, relational
-migration plan, security boundaries, cost policy, and architecture decisions are in
-[`docs/unified-intelligence-architecture.md`](docs/unified-intelligence-architecture.md).
-No patent draft or technical drawings were present in this repository, so the
-traceability report maps only the mechanisms supplied as product requirements and makes
-no patent-coverage claim.
+</div>
 
-## Operating policy
+![Omniweb landing page](docs/images/landing.png)
 
-Every Unified Create workflow is classified by domain and risk, records the approvals it
-needs, gives each specialist agent a structured handoff, and stores a quality record that
-reports only the status its evidence supports. See
-[`docs/operating-policy.md`](docs/operating-policy.md) for what code enforces and what
-remains model guidance.
+---
 
-## Engineering Design Agent
+## Contents
 
-`/projects/<id>/engineering` is the integrated parametric mechanical-design workspace.
-It extracts editable requirements, generates genuine CadQuery/OpenCascade STEP and STL
-geometry, creates PDF and DXF drawings, displays an interactive Three.js preview, runs
-Level 1 geometry validation, and preserves immutable revisions and review decisions. The
-workspace also creates multi-part STEP assemblies with BOMs and interference evidence,
-transparent manufacturing cost estimates, and deterministic static, thermal, and modal
-screening calculations.
-Supported MVP components are plates, equal-leg L brackets, cylindrical spacers, and
-open-top enclosures. See
-[`docs/engineering-design-agent.md`](docs/engineering-design-agent.md) for service
-boundaries, API contracts, isolation, tests, and limitations.
+- [What Omniweb is](#what-omniweb-is)
+- [Features](#features)
+  - [Unified Create](#unified-create)
+  - [Application builder and Studio](#application-builder-and-studio)
+  - [Growth workspace](#growth-workspace)
+  - [Engineering Design](#engineering-design)
+  - [Cloud development environments](#cloud-development-environments)
+  - [AI usage, routing, and budgets](#ai-usage-routing-and-budgets)
+  - [Website builder](#website-builder)
+- [Architecture](#architecture)
+- [Repository layout](#repository-layout)
+- [Quick start](#quick-start)
+- [Configuration](#configuration)
+- [Testing](#testing)
+- [Safety and governance](#safety-and-governance)
+- [Documentation](#documentation)
+- [Known limitations](#known-limitations)
 
-Geometry validation is not structural analysis, code compliance, engineering
-certification, or approval for manufacturing.
+## What Omniweb is
 
-## Application builder
+Omniweb is a multi-agent platform with three expert domains that share one project:
 
-- `/` — landing page. The prompt has two modes: **Website** (the local website builder
-  below) and **Full-stack app**, which creates an application project and starts a build.
-- `/projects` — project dashboard: stack, build and deployment status, GitHub repository,
-  last modified, and AI cost.
-- `/projects/<id>` — the Studio. The left panel holds chat, build progress, the
-  specification, Git checkpoints with diffs and undo/redo, and usage. The centre is the
-  live preview (desktop, tablet, phone; web and Expo surfaces) with element selection for
-  visual edits and an approval banner. The right panel holds a Monaco code editor, the
-  database schema and migrations, API routes, environment variables, GitHub sync and
-  deploys, and build logs. On phones the Studio shows one pane at a time.
-- `/projects/<id>/settings` — application details, model preferences, budget,
-  environment variables, collaborators, deletion.
-- `/usage` — organization AI spend, budgets, provider keys, routing tiers, model registry.
+| Domain | What it produces | How it is verified |
+| --- | --- | --- |
+| **Software and agentic AI engineering** | Real full-stack and mobile source code, previews, Git history, deployments | Sandboxed type checks, unit tests, builds, API tests, migrations |
+| **Digital marketing and business growth** | Business plans, campaigns, funnels, content, CRM, automations | Evidence labels on claims, schema checks, recorded first-party analytics only |
+| **Engineering design and manufacturing** | Parametric CAD parts and assemblies, drawings, cost estimates, screening calculations | Deterministic OpenCascade geometry validation and explicit analytical methods |
 
-### What a build produces
+A single prompt can span all three. A supervisor splits it into dependent tasks, routes
+each to a specialist agent, and records the risk, the approvals required, and a quality
+record that never claims more than the evidence supports.
 
-Each project is a Git repository (`<OMNIWEB_BUILDER_DATA_DIR>/projects/<id>/repo`) rendered
-from a versioned template and the app specification:
+<p align="center">
+  <img src="docs/images/navigation-mega-menu.png" alt="Platform navigation menu" width="100%" />
+</p>
 
-- `apps/web` — React, Vite, Tailwind, React Router-style hash routes, Vitest tests.
-- `services/api` — FastAPI, SQLAlchemy, Alembic migrations, scrypt password auth, pytest.
-- `apps/mobile` — Expo / React Native, previewed through react-native-web.
-- `infra/`, `.do/app.yaml`, `.github/workflows` — deployment and CI files.
+## Features
 
-A build runs the LangGraph pipeline *understand → plan → apply → verify → repair →
-finalize*. Every check (type-check, unit tests, web build, API tests, migrations, mobile
-bundle) runs in the sandbox with no network, a cleared environment, and resource limits.
-The preview only moves to a commit whose checks all passed; until then it keeps showing the
-last working version.
+### Unified Create
 
-### Safety rules the builder enforces
+`/create` is the main prompt surface. **Auto** mode detects every intent in a prompt;
+explicit Build, Business, Marketing, Content, Image, Video, and Engineering modes are also
+available.
 
-- Data-deleting migrations (dropping a field or model) stop and wait for approval.
-- Files you edit by hand are recorded and never overwritten by later generations.
-- Every deploy and rollback needs an approval; production also needs the owner to type the
-  project name. Agents cannot approve their own requests.
-- Previews are served from a separate origin per project (`<token>.preview.localhost`)
-  with a strict CSP, so a generated app can't read Omniweb's or another project's storage.
-- GitHub sync never force-pushes, refuses to push when GitHub has newer commits, and stops
-  on merge conflicts with the list of files. Tokens are short-lived GitHub App
-  installation tokens passed through the environment, never written to the repository.
+- A LangGraph supervisor builds a dependency-aware task graph. Strategy runs before
+  campaigns, and campaigns run before creative assets.
+- Each plan shows its **risk level**, the **domains** involved, and the **approvals
+  required** before anything consequential happens.
+- Each task carries a structured **handoff** (authorized capabilities, output schema,
+  acceptance criteria, token budget, risk, approval requirements).
+- Each finished task stores a **quality record**: status, method, verification evidence,
+  limitations, outstanding approvals, and next actions.
+
+![Unified Create execution plan with risk assessment and quality record](docs/images/unified-create-policy.png)
+
+```mermaid
+flowchart LR
+    P[Prompt] --> I[Intent detection]
+    I --> A[Risk and approval<br/>assessment]
+    A --> G[Task graph]
+    G --> B[Business]
+    G --> S[Build]
+    G --> E[Engineering]
+    B --> M[Marketing]
+    M --> C[Content]
+    M --> IM[Image job]
+    M --> V[Video job]
+    S & E & C & IM & V --> Q[Quality records]
+    Q --> W[Project workspace]
+```
+
+### Application builder and Studio
+
+Describe an application and Omniweb generates real source code, checks it in a sandbox,
+previews it, and lets you change it by chat, by hand, or by clicking the preview.
+
+![Studio with chat, live preview, and code editor](docs/images/studio.png)
+
+- **Left panel:** chat, build progress, requirements, Git checkpoints with diffs and
+  undo/redo, and usage.
+- **Centre:** live preview on desktop, tablet, and phone (web and Expo surfaces), with
+  element selection for visual edits and an approval banner.
+- **Right panel:** Monaco editor, database schema and migrations, API routes,
+  environment variables, GitHub sync and deploys, and build logs.
+- On phones the Studio shows one pane at a time.
+
+Each build runs a LangGraph pipeline. The preview only advances to a commit whose checks
+all passed; until then it keeps showing the last working version.
+
+```mermaid
+flowchart LR
+    U[Understand] --> PL[Plan] --> AP[Apply] --> VE[Verify in sandbox]
+    VE -- checks pass --> F[Finalize<br/>commit + preview]
+    VE -- checks fail --> R[Repair]
+    R --> VE
+    R -- attempts exhausted --> N[Needs attention]
+```
+
+**What a build produces.** Each project is a Git repository rendered from a versioned
+template and the app specification:
+
+- `apps/web` — React, Vite, Tailwind, hash routes, Vitest tests
+- `services/api` — FastAPI, SQLAlchemy, Alembic migrations, scrypt password auth, pytest
+- `apps/mobile` — Expo / React Native, previewed through react-native-web
+- `infra/`, `.do/app.yaml`, `.github/workflows` — deployment and CI files
+
+Every check (type check, unit tests, web build, API tests, migrations, mobile bundle) runs
+with no network, a cleared environment, and resource limits.
 
 Without AI provider keys, the architect and editor agents fall back to a deterministic
 planner that understands common requests ("add a due date to tasks", "remove the notes
 field from clients", "add invoices", "make it green", "add sign-in", "add a mobile app").
 Automatic repair of failing checks needs a provider.
 
-### Model gateway
+### Growth workspace
 
-`services/model-gateway` is a separate FastAPI service. It is the only component that
-holds provider keys. The control plane calls it with short-lived signed service tokens,
-and browsers never reach it. It supports OpenAI, Anthropic, Gemini, OpenRouter,
-OpenAI-compatible endpoints, and Ollama. Model IDs come from each provider's list-models
-API, never a hardcoded list. The gateway also handles routing tiers with bounded fallback,
-per-task, per-project and monthly budgets with hard limits, a usage ledger, and
-cancellation.
+`/projects/<id>/growth` keeps strategy, campaigns, funnels, blog and content work, CRM
+leads, analytics, automations, and capability improvements in the same project as the
+software.
 
-Without any provider key, chat replies come from a clearly labelled **development model**
-that makes no AI calls and costs $0. To use a real model, an organization admin adds a key
-under **Usage → Providers**, or the operator sets `GATEWAY_OPENAI_API_KEY` (or the
-Anthropic, Gemini, or OpenRouter equivalent) for platform-managed billing.
+![Growth workspace overview](docs/images/growth-workspace.png)
 
-## Cloud development environments
+- Business plans separate **sourced claims** from **assumptions** and **projections**.
+- Analytics show only recorded first-party events; missing values are never estimated.
+- Publication, email sends, paid media, and ad spend are explicit approval gates.
+- Forms record consent; email honours consent, unsubscribe, and suppression.
 
-Omniweb CDE is a multi-tenant control plane for creating secure remote development
-workspaces in a customer's DigitalOcean account. Users choose infrastructure, approve
-its estimated cost, and open the same workspace in a browser IDE or web console without
-managing SSH keys or public VM addresses.
+**Bidirectional capability evolution.** Authorized evidence from any domain can propose an
+improvement in another, and every step is versioned and linked to its evidence.
+Correlation is never labelled causation.
 
-This repository contains a functional local vertical slice. Infrastructure operations
-run in safe mock mode by default; no billable resource is created without changing the
-configuration and providing an authorized, scoped DigitalOcean token.
+```mermaid
+flowchart LR
+    O[Observation] --> EV[Evidence] --> H[Hypothesis] --> CM[Capability match]
+    CM --> PR[Proposed change] --> AP{Approved?}
+    AP -- yes --> IM[Implemented in isolation] --> VF[Verified] --> RL[Released]
+    RL --> OM[Outcome measured]
+    OM -. new evidence .-> O
+    AP -- no --> RJ[Rejected]
+    VF -- fails --> FL[Failed / rolled back]
+```
 
-## Website builder
+### Engineering Design
 
-The landing page at `/` is a prompt-to-website builder. Describe a site, and Omniweb
-generates a responsive, single-file website shown in a live preview at
-`/build/<projectId>`. Refine it by chatting ("make it dark", "add an FAQ", `headline
-"Ship faster together"`, "rename it to Atlas", "make it a restaurant"). Every change is
-a version you can undo or redo. The builder can switch between desktop, tablet, and
-mobile previews, show the generated HTML, copy it, open it in a new tab, or export it.
+`/projects/<id>/engineering` is an integrated parametric mechanical-design workspace. It
+produces genuine CAD geometry, not images of drawings.
 
-The designer engine (`frontend/src/lib/site-generator.ts`) runs entirely in the browser
-and needs no API keys. Projects are saved in the browser's local storage. The cloud
-workspaces dashboard is unchanged and now lives at `/app`.
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/engineering-parts.png" alt="Parametric part with interactive 3D preview and editable parameters" /></td>
+    <td width="50%"><img src="docs/images/engineering-assembly.png" alt="Multi-part CAD assembly with BOM and interference checks" /></td>
+  </tr>
+  <tr>
+    <td><b>Parts.</b> Natural-language requirements, editable parameters, interactive Three.js preview, immutable revisions.</td>
+    <td><b>Assemblies.</b> Multi-body STEP assemblies with placement, bill of materials, and interference screening.</td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/engineering-manufacturing.png" alt="Budgetary manufacturing estimate with cost breakdown and assumptions" /></td>
+    <td><img src="docs/images/engineering-simulation.png" alt="Deterministic static screening results with verification checklist" /></td>
+  </tr>
+  <tr>
+    <td><b>Manufacturing.</b> Transparent budgetary estimates for sheet metal, CNC, laser cutting, and FDM, with editable rates.</td>
+    <td><b>Simulations.</b> Static, thermal-expansion, and first-mode screening with explicit inputs, methods, and assumptions.</td>
+  </tr>
+</table>
+
+[![Engineering CAD workspace walkthrough](frontend/public/media/engineering-cad-workspace-poster.jpg)](frontend/public/media/engineering-cad-workspace-walkthrough.mp4)
+
+*Click the image to watch the Engineering CAD workspace walkthrough.*
+
+- Supported components: plates, equal-leg L brackets, cylindrical spacers, and open-top
+  enclosures, with holes and optional fillets.
+- Exports: STEP, STL, PDF drawings, DXF, and the native parametric JSON source.
+- The CAD service accepts validated declarative specifications only. It never executes
+  user- or model-authored Python.
+
+```mermaid
+flowchart LR
+    NL[Natural-language request] --> RX[Requirements extraction]
+    RX -- missing critical values --> QS[Ask the user]
+    RX --> SP[Declarative parametric spec]
+    SP --> CQ[CadQuery / OpenCascade]
+    CQ --> L1[Level 1 geometry validation]
+    L1 --> AR[STEP · STL · PDF · DXF]
+    AR --> RV[Immutable revision]
+    RV --> AS[Assemblies]
+    RV --> MF[Manufacturing estimate]
+    RV --> SM[Screening simulation]
+    RV --> RQ[Engineering review request]
+```
+
+> Geometry validation is not structural analysis, code compliance, engineering
+> certification, or approval for manufacturing. Manufacturing estimates are not supplier
+> quotes. Screening calculations are not finite-element analysis.
+
+### Cloud development environments
+
+`/app` is a multi-tenant control plane for secure remote development workspaces in a
+customer's DigitalOcean account. Users choose infrastructure, approve its estimated cost,
+and open the workspace in a browser IDE or web console without managing SSH keys or public
+VM addresses.
+
+![Cloud workspaces dashboard](docs/images/cloud-workspaces.png)
+
+Infrastructure operations run in safe mock mode by default. No billable resource is
+created without changing the configuration and providing an authorized, scoped
+DigitalOcean token.
+
+### AI usage, routing, and budgets
+
+![Usage and models page](docs/images/usage.png)
+
+- **Model gateway** is the only component that holds provider keys. It supports OpenAI,
+  Anthropic, Gemini, OpenRouter, OpenAI-compatible endpoints, and Ollama. Model IDs come
+  from each provider's list-models API.
+- **Adaptive AI Execution Engine (AAEE)** is the single cost-aware router. It uses
+  deterministic tools first, then low-cost GPT-OSS/Grok routes, then hosted models,
+  escalating on measured failure signals within a bounded ladder.
+- Per-task, per-project, and monthly budgets have hard limits, a usage ledger, and
+  cancellation.
+- Without any provider key, chat replies come from a clearly labelled **development model**
+  that makes no AI calls and costs $0.
+
+### Website builder
+
+The landing page also has a **Website** mode: describe a site and Omniweb generates a
+responsive single-file website with a live preview at `/build/<projectId>`. Refine it by
+chatting ("make it dark", "add an FAQ", "make it a restaurant"). Every change is a version
+you can undo or redo, preview on desktop, tablet, or mobile, copy, or export. This designer
+runs entirely in the browser and needs no API keys.
+
+<p align="center">
+  <img src="docs/images/landing-mobile.png" alt="Landing page on mobile" width="300" />
+</p>
+
+## Architecture
+
+```mermaid
+flowchart TB
+    subgraph Client
+        WEB[Web app<br/>TanStack Start · React 19<br/>:43210]
+    end
+
+    subgraph Edge
+        CADDY[Caddy reverse proxy<br/>:8088]
+    end
+
+    subgraph ControlPlane[Control plane]
+        API[FastAPI API<br/>identity · projects · builder · growth<br/>engineering · intelligence<br/>:8010]
+        PREV[Preview server<br/>per-project origins<br/>:43230]
+    end
+
+    subgraph AI[AI services]
+        AAEE[Adaptive AI Execution Engine<br/>cost-per-success routing<br/>:8030]
+        GW[Model gateway<br/>sole provider-key holder<br/>:8020]
+    end
+
+    subgraph Isolated[Isolated workers]
+        ENG[Engineering CAD service<br/>CadQuery · OpenCascade<br/>:8040]
+        SBX[Build sandbox<br/>no network · resource limits]
+    end
+
+    subgraph Data
+        PG[(PostgreSQL)]
+        RD[(Redis)]
+        OBJ[(Object store)]
+        TMP[Temporal]
+    end
+
+    subgraph External
+        LLM[OpenAI · Anthropic · Gemini<br/>xAI · OpenRouter · Ollama]
+        GH[GitHub App]
+        DO[DigitalOcean]
+        CODER[Coder]
+        KC[Keycloak OIDC]
+    end
+
+    WEB --> CADDY --> API
+    WEB --> PREV
+    API --> AAEE --> GW --> LLM
+    API --> ENG
+    API --> SBX
+    PREV --> SBX
+    API --> PG & RD & OBJ & TMP
+    API --> GH & DO & CODER
+    API -. OIDC .-> KC
+```
+
+**Key decisions** (details in [`docs/`](docs/)):
+
+1. **One control plane** for transactional domains. PostgreSQL in production; SQLite for
+   deterministic local development and tests.
+2. **Typed relational graph** for capability evolution. A graph database isn't justified
+   by current queries.
+3. **LangGraph supervisors** with persisted workflow and task state, so restarts and audits
+   don't depend on in-memory graphs.
+4. **One model router.** Every text task goes through AAEE; deterministic routing and
+   templates run before any model call.
+5. **Credential isolation.** Only the model gateway holds text-model keys. Media keys stay
+   in server-side adapters and never reach browsers, generated apps, CDEs, prompts, or logs.
+6. **Isolated execution.** Builds run in a sandbox; CAD runs in a non-root, read-only,
+   resource-limited service with no external network.
+
+### Request lifecycle with approvals
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Web
+    participant API
+    participant Policy as Operating policy
+    participant Agent as Specialist agent
+    participant AAEE
+    participant Verifier
+
+    User->>Web: Prompt
+    Web->>API: POST /intelligence/requests (idempotency key)
+    API->>Policy: Classify domains, risk, approvals
+    API->>API: Persist workflow, tasks, handoffs
+    API-->>Web: 202 Accepted + assessment
+    loop Each ready task
+        API->>Agent: Handoff
+        Agent->>AAEE: Policy-composed prompt, token budget
+        AAEE-->>Agent: Routed result + cost
+        Agent->>Verifier: Deterministic checks
+        Verifier-->>API: Evidence
+        API->>API: Store output + quality record
+    end
+    Web->>API: Poll workflow
+    API-->>Web: Statuses, quality records
+    User->>API: Approve a specific action
+    API->>API: Enforce approval, then execute
+```
 
 ## Repository layout
 
-- `frontend/` — TanStack Start dashboard, provisioning wizard, workspace details, and xterm console
-- `backend/` — FastAPI control plane: identity, projects, workspaces, provider adapter, and tests
-- `services/model-gateway/` — model discovery, registry, routing, budgets, and usage ledger
-- `services/engineering/` — isolated deterministic parametric CAD, drawing, export, and geometry validation
-- `assets/` — product images and marks
-- `infrastructure/` — Coder template, cloud-init, Caddy, identity, and container configuration
-- `docs/` — architecture, deployment, operations, API, security, and known limitations
+```text
+.
+├── frontend/                    TanStack Start web app (React 19, Tailwind, Three.js, Monaco)
+│   ├── src/routes/              Pages: landing, create, projects, studio, growth, engineering, usage, app
+│   ├── src/lib/api.ts           Typed API client
+│   ├── public/media/            Product walkthrough video and poster
+│   └── e2e/                     Playwright browser tests
+├── backend/                     FastAPI control plane
+│   ├── app/builder/             LangGraph build pipeline, templates, sandbox, edits
+│   ├── app/intelligence/        Unified Create supervisor and operating policy
+│   ├── app/engineering/         CAD service client and durable job worker
+│   ├── app/*_api.py             Projects, builder, growth, marketing, engineering, AI routes
+│   ├── migrations/              Alembic migrations
+│   └── tests/                   pytest suites
+├── services/
+│   ├── model-gateway/           Provider registry, routing tiers, budgets, usage ledger
+│   ├── ai-execution-engine/     AAEE: classifier, planner, escalation, validation, analytics
+│   └── engineering/             Deterministic CAD, drawings, assemblies, estimates, screening
+├── infrastructure/              Coder template, cloud-init, Caddy, Keycloak, containers
+├── assets/                      Product marks
+├── docs/                        Architecture, operations, security, policy, ADRs, images
+└── docker-compose.yml           Full local stack
+```
 
 ## Quick start
 
-### Web experience
+### Prerequisites
+
+- Node.js 20+ and npm
+- Python 3.12
+- git and util-linux `unshare` with unprivileged user namespaces (for builder sandboxes)
+- Optional: Docker or Podman for the full Compose stack
+
+### 1. Web app
 
 ```bash
 cd frontend
 npm install
-npm run dev
+npm run dev            # http://localhost:43210
 ```
 
-Open <http://localhost:43210> for the builder, or <http://localhost:43210/app> for cloud
-workspaces. The frontend uses representative local data if the API is
-not running, so the full dashboard and console can be evaluated immediately.
+The frontend uses representative local data when the API isn't running, so the
+dashboards can be evaluated immediately.
 
-### API
+### 2. API
 
 ```bash
 cd backend
-python3.12 -m venv .venv
-. .venv/bin/activate
+python3.12 -m venv .venv && . .venv/bin/activate
 pip install -e '.[dev]'
-uvicorn app.main:app --reload --port 8010
+alembic upgrade head
+uvicorn app.main:app --reload --port 8010    # OpenAPI at http://localhost:8010/docs
 ```
 
-OpenAPI is available at <http://localhost:8010/docs>. Development mode uses SQLite,
-a seeded local organization, and mocked DigitalOcean/Coder operations. Without
-`OMNIWEB_OIDC_ISSUER`, requests use a local development identity, which the UI labels.
+Development mode uses SQLite, a seeded local organization, and mocked DigitalOcean and
+Coder operations. Without `OMNIWEB_OIDC_ISSUER`, requests use a local development identity,
+which the UI labels.
 
 The first build installs the generated apps' shared npm and Python toolchain into
-`<OMNIWEB_BUILDER_DATA_DIR>/toolchain`, which needs network access once and takes a minute.
-Builds need Node 20+, git, and util-linux `unshare` with unprivileged user namespaces.
+`<OMNIWEB_BUILDER_DATA_DIR>/toolchain`. That needs network access once.
 
-### Preview server
+### 3. Supporting services
+
+Run each in its own terminal:
 
 ```bash
-cd backend
-uvicorn app.preview_server:app --host 127.0.0.1 --port 43230
+# Preview server: serves each project's last verified build on its own origin
+(cd backend && uvicorn app.preview_server:app --host 127.0.0.1 --port 43230)
+
+# Model gateway
+(cd services/model-gateway && pip install -e '.[dev]' && uvicorn gateway.main:app --reload --port 8020)
+
+# Adaptive AI Execution Engine
+(cd services/ai-execution-engine && pip install -e '.[dev]' && uvicorn aaee.main:app --reload --port 8030)
+
+# Engineering CAD service
+(cd services/engineering && pip install -e '.[dev]' && uvicorn engineering.main:app --reload --port 8040)
 ```
 
-It serves each project's last verified build and proxies `/api` to that project's
-preview API over a Unix socket. Browsers resolve `*.localhost` to loopback, so per-project
-origins work locally without DNS. Elsewhere, point a wildcard DNS record at it and set
-`OMNIWEB_PREVIEW_URL`.
+| Service | Port | URL setting in the API |
+| --- | --- | --- |
+| Web app | 43210 | — |
+| API | 8010 | — |
+| Model gateway | 8020 | `OMNIWEB_MODEL_GATEWAY_URL` |
+| AAEE | 8030 | `OMNIWEB_AAEE_URL` |
+| Engineering CAD | 8040 | `OMNIWEB_ENGINEERING_SERVICE_URL` |
+| Preview server | 43230 | `OMNIWEB_PREVIEW_URL` |
 
-### Builder settings
+Browsers resolve `*.localhost` to loopback, so per-project preview origins work locally
+without DNS. Elsewhere, point a wildcard DNS record at the preview server.
+
+### 4. Full stack with Docker Compose
+
+```bash
+docker compose up --build    # http://localhost:8088
+```
+
+Includes PostgreSQL, Redis, Temporal, Keycloak, Coder, the model gateway, AAEE, the API,
+the engineering service, the preview server, the web app, and Caddy. To sign in through
+Keycloak instead of the development identity, set
+`OMNIWEB_OIDC_ISSUER=http://localhost:8180/realms/omniweb` before building. Local passwords
+are development defaults and must be replaced outside an isolated workstation.
+
+> The Compose stack hasn't been run in this repository's development environment, which
+> has no container runtime.
+
+## Configuration
+
+### Builder
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `OMNIWEB_BUILDER_DATA_DIR` | `./.omniweb` | Project repositories, builds, previews, local GitHub stand-in |
 | `OMNIWEB_BUILDER_TOOLCHAIN_DIR` | `<data>/toolchain` | Shared npm and Python packages for generated apps |
-| `OMNIWEB_SANDBOX_MODE` | `namespace` | `namespace` (unshare), `container` (Docker/Podman, recommended for production), or `disabled` |
+| `OMNIWEB_SANDBOX_MODE` | `namespace` | `namespace` (unshare), `container` (recommended for production), or `disabled` |
 | `OMNIWEB_SANDBOX_TIMEOUT_SECONDS` | `300` | Per-check time limit |
 | `OMNIWEB_PREVIEW_URL` | `http://localhost:43230` | Public base URL of the preview server |
 | `OMNIWEB_PREVIEW_SUBDOMAINS` | `true` | One origin per project; `false` falls back to `/p/<token>/` paths |
-| `OMNIWEB_MAX_REPAIR_ATTEMPTS` | `2` | Repair passes before a build is marked as needing attention |
-| `OMNIWEB_GITHUB_APP_ID`, `OMNIWEB_GITHUB_APP_PRIVATE_KEY` | empty | Sync with github.com through a GitHub App. Empty uses a local bare repository |
+| `OMNIWEB_MAX_REPAIR_ATTEMPTS` | `2` | Repair passes before a build needs attention |
+| `OMNIWEB_GITHUB_APP_ID`, `OMNIWEB_GITHUB_APP_PRIVATE_KEY` | empty | Sync with github.com through a GitHub App; empty uses a local bare repository |
 | `OMNIWEB_MOCK_INFRASTRUCTURE` | `true` | Deploys go to a mock App Platform; set `false` only with an authorized DigitalOcean token |
 
-### Model gateway
+### AI services
 
-```bash
-cd services/model-gateway
-python3.12 -m venv .venv
-. .venv/bin/activate
-pip install -e '.[dev]'
-uvicorn gateway.main:app --reload --port 8020
-```
+| Variable | Purpose |
+| --- | --- |
+| `OMNIWEB_MODEL_GATEWAY_SECRET` / `GATEWAY_SERVICE_SECRET` | Shared service secret between API and gateway (must match) |
+| `OMNIWEB_AAEE_SECRET` / `AAEE_SERVICE_SECRET` | Shared service secret between API and AAEE (must match) |
+| `GATEWAY_OPENAI_API_KEY` (and Anthropic, Gemini, OpenRouter equivalents) | Platform-managed provider credentials |
 
-The control plane expects it at `http://127.0.0.1:8020` (`OMNIWEB_MODEL_GATEWAY_URL`).
-Both services share the development secret by default; set `OMNIWEB_MODEL_GATEWAY_SECRET`
-and `GATEWAY_SERVICE_SECRET` to the same value outside development.
-
-### Adaptive AI Execution Engine
-
-```bash
-cd services/ai-execution-engine
-python3 -m pip install -e '.[dev]'
-python3 -m uvicorn aaee.main:app --reload --port 8030
-```
-
-The backend calls AAEE at `OMNIWEB_AAEE_URL` and signs requests with
-`OMNIWEB_AAEE_SECRET`; AAEE uses `AAEE_SERVICE_SECRET` to verify them. AAEE is the single
-cost-aware router for builder, business, marketing, and content tasks. It uses
-deterministic tools first, then configured GPT-OSS/Grok/OpenAI routes by task phase and
-bounded escalation. Codex is intentionally not a provider. Model estimates and configured
-budget ceilings are controls, not guarantees of provider billing.
-
-### Engineering CAD service
-
-```bash
-cd services/engineering
-python3 -m pip install -e '.[dev]'
-python3 -m uvicorn engineering.main:app --reload --port 8040
-```
-
-The backend calls this service at `OMNIWEB_ENGINEERING_SERVICE_URL`. The service accepts
-validated declarative specifications only and does not execute user- or LLM-authored
-Python. `docker compose up --build` runs it as a non-root, read-only, resource-limited
-service without external network access.
+Organization admins can also add their own keys under **Usage → Providers**.
 
 ### Media providers
 
-Media adapters are disabled until an administrator configures credentials, verifies model
-access and pricing, and authorizes a job. No paid generation is performed by setup or
-tests.
+Media adapters stay disabled until an administrator configures credentials, verifies model
+access and pricing, and authorizes a job. Setup and tests never perform paid generation.
 
 | Variable | Purpose |
 | --- | --- |
@@ -266,45 +502,102 @@ tests.
 | `OMNIWEB_MEDIA_PRICING_JSON` | Operator-validated estimates used before authorization |
 | `OMNIWEB_ASSET_DATA_DIR` | Object-store adapter data directory |
 
-At implementation time the official OpenAI schema exposed GPT Image 1/1.5-family image
-models and a Sora 2 video endpoint. The requested names `gpt-image-2.5-flare` and
-`gpt-image-2.5-sunburst` could not be verified and are not registered. Video capability
-remains unavailable unless a configured account is explicitly validated; unsupported
-features fail with a capability status rather than a false promise.
+Unverified model names are never registered; unsupported features return a capability
+status rather than a false promise.
 
-### Tests
+## Testing
 
 ```bash
-(cd backend && pytest && ruff check .)
+(cd backend && pytest && ruff check app tests && alembic check)
+(cd services/engineering && pytest && ruff check .)
 (cd services/model-gateway && pytest && ruff check .)
 (cd services/ai-execution-engine && pytest && ruff check .)
 (cd frontend && npm run typecheck && npm run build)
-# Browser tests run against the dev servers above:
+
+# Browser tests run against the dev servers above
 (cd frontend && npx playwright install chromium && npm run test:e2e)
 ```
 
-### Full local control plane
+Browser coverage includes the landing navigation and marketing pages, mobile layouts,
+app generation with preview and chat edits, Studio panels, write-only environment
+variables, the usage page, Unified Create risk and quality records, and the engineering
+parts, assemblies, manufacturing, and simulation workflows. CI uses mocked providers and
+incurs no paid inference or media spend.
 
-```bash
-docker compose up --build
+## Safety and governance
+
+Omniweb runs under a versioned operating policy
+([`docs/operating-policy.md`](docs/operating-policy.md)). Model instructions are guidance,
+not a security boundary: authorization, approvals, budgets, and execution limits are
+enforced in code.
+
+```mermaid
+flowchart LR
+    subgraph Low[Low risk · automatic]
+        D1[Drafts and analysis]
+        D2[Isolated previews]
+        D3[Non-destructive tests]
+    end
+    subgraph High[High risk · explicit, scoped approval]
+        H1[Production deploy]
+        H2[Publication]
+        H3[Ad spend and paid media]
+        H4[Customer messaging]
+        H5[Engineering release]
+        H6[Destructive data changes]
+    end
+    Low --> R{Consequential?}
+    R -- no --> Done[Runs within budget]
+    R -- yes --> High
 ```
 
-The reverse proxy listens on <http://localhost:8088>. PostgreSQL, Redis, Temporal,
-Keycloak, Coder, the model gateway, the API, the preview server (port 43230), and the web
-app are included. The Compose stack has not been run in this repository's development
-environment, which has no container runtime. To sign in
-through Keycloak instead of the development identity, set
-`OMNIWEB_OIDC_ISSUER=http://localhost:8180/realms/omniweb` before building. The
-`model_gateway` database is created on first start of a fresh PostgreSQL volume. Local passwords are development
-defaults and must be replaced outside an isolated workstation.
+**Completion statuses** are reported only as far as evidence supports:
+`proposed → generated → tested → verified → approved → deployed`.
 
-## Safety
+What the platform enforces:
 
-- `OMNIWEB_MOCK_INFRASTRUCTURE=true` is the default.
-- Provider tokens are accepted only by the API, encrypted before storage, and never returned.
-- Real infrastructure mode is intentionally not enabled by the sample Compose environment.
-- Cost figures are estimates. DigitalOcean billing is authoritative, and stopped resources
-  can continue to incur storage or other charges.
+- **Tenancy.** Organization and project claims come from authenticated principals or
+  signed service tokens, never request bodies.
+- **Prompt injection.** User and retrieved content is delimited as untrusted data;
+  override phrases raise risk and are recorded.
+- **Builder safety.** Data-deleting migrations wait for approval. Hand-edited files are
+  never overwritten. Every deploy and rollback needs approval, and production also needs
+  the owner to type the project name. Agents can't approve their own requests.
+- **Preview isolation.** Each project's preview runs on its own origin with a strict CSP.
+- **Git safety.** Sync never force-pushes, refuses to push over newer remote commits, and
+  stops on conflicts. GitHub App tokens are short-lived and never written to repositories.
+- **Secrets.** Provider tokens are encrypted before storage and never returned.
+- **Engineering boundaries.** CAD and analysis outputs carry explicit validation levels
+  and safety notices. Safety-critical or regulated requests are escalated for qualified
+  professional review.
+- **Costs.** Figures are estimates. Provider and DigitalOcean billing are authoritative,
+  and stopped resources can still incur charges.
 
-See [Deployment](docs/deployment.md), [Operations](docs/runbook.md), and
-[Known limitations](docs/known-limitations.md) before using a real cloud account.
+## Documentation
+
+| Document | Contents |
+| --- | --- |
+| [Platform plan](docs/platform-plan.md) | Service boundaries and milestone status |
+| [Architecture](docs/architecture.md) | DigitalOcean CDE decision, workspace state, trust boundaries |
+| [Unified intelligence](docs/unified-intelligence-architecture.md) | Business, marketing, creative, and capability-evolution design |
+| [Engineering Design Agent](docs/engineering-design-agent.md) | CAD service contracts, isolation, validation levels, tests |
+| [Operating policy](docs/operating-policy.md) | What code enforces versus model guidance |
+| [ADR 0001](docs/adr/0001-adaptive-ai-execution-engine.md) | Adaptive AI Execution Engine decision |
+| [Security](docs/security.md) · [Security results](docs/security-results.md) | Security model and verification results |
+| [Deployment](docs/deployment.md) · [Runbook](docs/runbook.md) | Operating the platform |
+| [Integration notes](docs/integration-notes.md) | Verified Coder, DigitalOcean, and model-provider notes |
+| [Known limitations](docs/known-limitations.md) | Current gaps |
+
+## Known limitations
+
+- Infrastructure runs in mock mode by default; real DigitalOcean provisioning needs an
+  authorized token and configuration changes.
+- Automatic repair of failing builds needs an AI provider key.
+- Engineering supports four component families and Level 1 geometry validation. Assembly
+  checks don't validate mates, joints, fasteners, fits, or load transfer. Simulations are
+  analytical screening only.
+- Risk and regulated-category detection is keyword based; it triggers review and isn't a
+  legal, regulatory, or engineering determination.
+- Video generation stays unavailable until a provider account and endpoint are verified.
+
+See [`docs/known-limitations.md`](docs/known-limitations.md) for the full list.
