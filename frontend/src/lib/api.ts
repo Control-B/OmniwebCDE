@@ -223,8 +223,41 @@ export interface IntelligenceTask {
   title: string
   status: string
   depends_on: string[]
-  output: Record<string, unknown>
+  handoff: {
+    domain: string
+    authorized_capabilities: string[]
+    acceptance_criteria: string[]
+    approval_requirements: string[]
+    max_output_tokens: number
+  } | null
+  output: Record<string, unknown> & { quality_record?: QualityRecord }
   error: string | null
+}
+
+export type QualityStatus = 'proposed' | 'generated' | 'tested' | 'verified' | 'approved' | 'deployed'
+
+export interface QualityRecord {
+  policy_version: string
+  status: QualityStatus
+  objective: string
+  method: string
+  verification: Array<{ check: string; result: string; by: string }>
+  limitations: string[]
+  outstanding_approvals: string[]
+  professional_review: string[]
+  next_actions: string[]
+}
+
+export interface PolicyAssessment {
+  policy_version: string
+  domains: string[]
+  risk: 'low' | 'moderate' | 'high'
+  required_approvals: Array<{ action: string; label: string; status: string }>
+  regulated_categories: string[]
+  sensitive_data: string[]
+  injection_signals: number
+  professional_review: string[]
+  clarifying_questions: string[]
 }
 
 export interface IntelligenceWorkflow {
@@ -237,6 +270,7 @@ export interface IntelligenceWorkflow {
   result: Record<string, unknown>
   created_at: string
   finished_at: string | null
+  assessment: PolicyAssessment | null
   tasks: IntelligenceTask[]
 }
 

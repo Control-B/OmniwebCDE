@@ -29,6 +29,14 @@ No patent draft or technical drawings were present in this repository, so the
 traceability report maps only the mechanisms supplied as product requirements and makes
 no patent-coverage claim.
 
+## Operating policy
+
+Every Unified Create workflow is classified by domain and risk, records the approvals it
+needs, gives each specialist agent a structured handoff, and stores a quality record that
+reports only the status its evidence supports. See
+[`docs/operating-policy.md`](docs/operating-policy.md) for what code enforces and what
+remains model guidance.
+
 ## Engineering Design Agent
 
 `/projects/<id>/engineering` is the integrated parametric mechanical-design workspace.

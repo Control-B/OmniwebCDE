@@ -1,13 +1,15 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Link, createFileRoute } from '@tanstack/react-router'
 import {
-  ArrowRight, BriefcaseBusiness, Check, Circle, Code2, DraftingCompass, Image, Megaphone,
-  PenLine, Play, Sparkles, Video,
+  AlertTriangle, ArrowRight, BriefcaseBusiness, Check, ChevronDown, Circle, Code2, DraftingCompass,
+  Image, Megaphone, PenLine, Play, ShieldCheck, Sparkles, Video,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { AppNav, RequireAuth } from '../components/studio/AppNav'
-import { platform, type IntelligenceMode, type IntelligenceWorkflow } from '../lib/api'
+import {
+  platform, type IntelligenceMode, type IntelligenceTask, type IntelligenceWorkflow, type PolicyAssessment,
+} from '../lib/api'
 
 export const Route = createFileRoute('/create')({
   head: () => ({ meta: [{ title: 'Unified Create — Omniweb' }] }),
@@ -111,16 +113,64 @@ function WorkflowView({ workflow }: { workflow: IntelligenceWorkflow }) {
         <div><span className={`growth-live ${running ? 'running' : ''}`}>{running ? 'Executing' : workflow.status}</span><h2>Your connected execution plan</h2></div>
         {workflow.project_id && <Link className="growth-primary secondary" to="/projects/$projectId/growth" params={{ projectId: workflow.project_id }}>Open workspace <ArrowRight size={15} /></Link>}
       </header>
+      {workflow.assessment && <AssessmentPanel assessment={workflow.assessment} />}
       <div className="growth-task-list">
         {workflow.tasks.map((task, index) => (
           <article key={task.id} className={`growth-task ${task.status}`}>
             <span className="growth-task-node">{task.status === 'completed' ? <Check size={15} /> : task.status === 'running' ? <Play size={13} /> : <Circle size={12} />}</span>
-            <div><small>0{index + 1} · {task.kind.replaceAll('_', ' ')}</small><strong>{task.title}</strong>{task.depends_on.length > 0 && <p>After {task.depends_on.join(', ')}</p>}{task.error && <p className="st-error">{task.error}</p>}</div>
-            <span className="st-pill">{task.status}</span>
+            <div>
+              <small>0{index + 1} · {task.kind.replaceAll('_', ' ')}</small><strong>{task.title}</strong>
+              {task.depends_on.length > 0 && <p>After {task.depends_on.join(', ')}</p>}
+              {task.error && <p className="st-error">{task.error}</p>}
+              <QualityDetails task={task} />
+            </div>
+            <span className="st-pill">{task.output.quality_record?.status ?? task.status}</span>
           </article>
         ))}
       </div>
       <footer><span>Recorded AI cost</span><strong>${workflow.total_cost_usd.toFixed(4)}</strong><small>Provider-reported usage only</small></footer>
     </section>
+  )
+}
+
+const riskCopy = {
+  low: 'Drafts, analysis and isolated previews run automatically.',
+  moderate: 'Consequential steps wait for scoped approvals.',
+  high: 'Escalated: qualified review and approvals are required.',
+}
+
+function AssessmentPanel({ assessment }: { assessment: PolicyAssessment }) {
+  const notices = [...assessment.professional_review, ...assessment.clarifying_questions]
+  return (
+    <section className={`growth-assessment ${assessment.risk}`} aria-label="Risk and approval assessment">
+      <div className="growth-assessment-head">
+        <ShieldCheck size={16} />
+        <div><strong>{assessment.risk} risk</strong><small>{riskCopy[assessment.risk]}</small></div>
+        <span>Policy {assessment.policy_version}</span>
+      </div>
+      <div className="growth-assessment-grid">
+        <div><small>Domains</small><p>{assessment.domains.join(', ')}</p></div>
+        <div><small>Approvals required</small><p>{assessment.required_approvals.length ? assessment.required_approvals.map((item) => item.label).join(', ') : 'None for this plan'}</p></div>
+      </div>
+      {notices.length > 0 && <ul>{notices.map((item) => <li key={item}><AlertTriangle size={13} />{item}</li>)}</ul>}
+    </section>
+  )
+}
+
+function QualityDetails({ task }: { task: IntelligenceTask }) {
+  const record = task.output.quality_record
+  if (!record) return null
+  return (
+    <details className="growth-quality">
+      <summary><ChevronDown size={13} /> Quality record · {record.status}</summary>
+      <dl>
+        <dt>Method</dt><dd>{record.method}</dd>
+        <dt>Verification</dt>
+        <dd>{record.verification.map((item) => <span key={item.check}>{item.check}: <b className={item.result}>{item.result.replaceAll('_', ' ')}</b> <em>({item.by})</em></span>)}</dd>
+        <dt>Limitations</dt><dd>{record.limitations.map((item) => <span key={item}>{item}</span>)}</dd>
+        {record.outstanding_approvals.length > 0 && <><dt>Awaiting approval</dt><dd>{record.outstanding_approvals.join(', ')}</dd></>}
+        <dt>Next</dt><dd>{record.next_actions.map((item) => <span key={item}>{item}</span>)}</dd>
+      </dl>
+    </details>
   )
 }
