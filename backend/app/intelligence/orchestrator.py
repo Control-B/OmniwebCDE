@@ -522,7 +522,7 @@ async def handle_content(workflow: IntelligenceWorkflow, task: IntelligenceTask)
                 content_type=str(item.get("type") or "text")[:40],
                 title=str(item.get("title") or "Untitled")[:200],
                 prompt_reference=str(workflow.id),
-                provider=usage.get("model", "").split("/", 1)[0] or None,
+                provider=(usage.get("model") or "").split("/", 1)[0] or None,
                 model=usage.get("model"),
                 cost_usd=0,
                 usage_rights={"status": "review_required"},
