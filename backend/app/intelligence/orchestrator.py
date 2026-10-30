@@ -56,7 +56,7 @@ MODES = {
 PATTERNS = {
     "build": r"\b(build|website|web app|application|mobile app|software|feature|code)\b",
     "business": r"\b(business plan|business model|market research|pricing strategy|revenue model|go.to.market)\b",
-    "marketing": r"\b(marketing|campaign|funnel|audience|seo|keyword|conversion|advertis|lead generation)\b",
+    "marketing": r"\b(marketing|campaign|funnel|audience|seo|keyword|conversion|advertis\w*|paid ads|ad campaign|lead generation)\b",
     "content": r"\b(blog|article|social (?:media )?posts?|email campaign|copy|product descriptions?|content calendar)\b",
     "image": r"\b(image|images|graphic|banner|illustration|logo|photo|creative)\b",
     "video": r"\b(video|storyboard|video campaign|video brief)\b",

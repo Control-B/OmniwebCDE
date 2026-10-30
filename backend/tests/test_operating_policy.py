@@ -34,6 +34,12 @@ def test_consequential_actions_require_scoped_approvals():
     assert "Which jurisdictions" in result["clarifying_questions"][0]
 
 
+def test_advertising_requests_route_to_the_marketing_agent():
+    from app.intelligence.orchestrator import detect_intents
+
+    assert "marketing" in detect_intents("Run paid ads with a $300 advertising budget", "AUTO")
+
+
 def test_media_always_requires_cost_approval():
     result = policy.assess("Generate promotional images", ["image"])
     assert [item["action"] for item in result["required_approvals"]] == ["paid_media"]
